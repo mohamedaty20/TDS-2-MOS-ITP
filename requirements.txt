@@ -1,4 +1,4 @@
-nicegui
+nicegui<3
 fastapi
 uvicorn
 python-dotenv
