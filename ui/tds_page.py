@@ -1,453 +1,371 @@
 """
-ui/tds_page.py — Standalone TDS → MOS + ITP page.
+services/tds_service.py — TDS → Method Statement + ITP generator.
+
+Takes a manufacturer Technical Data Sheet text, calls Gemini with a strict
+extraction prompt, returns structured {product, critical_parameters,
+method_statement, inspection_test_plan}. Also builds the two downloadable
+PDFs. Reuses fonts + ReportLab setup from defect_service.
 """
-import asyncio
+import io
+import re
+import json
 import datetime
-import html as _html_mod
-from nicegui import ui
 
 from services import defect_service as svc
-from services import tds_service as tds
-from services.ai_service import call_gemini_json
 
 
-STYLE = """
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
-<style>
-  html, body {
-    background: #0b0b0b !important; color: #e8e8e8 !important;
-    font-family: 'JetBrains Mono','Amiri','Courier New',monospace !important;
-    font-size: 13px; -webkit-font-smoothing: antialiased;
+_TDS_PROMPT_TEMPLATE = """You are an expert Civil Quality Control Engineer and Technical Document Specialist.
+
+Your task is to analyze the manufacturer Technical Data Sheet (TDS) text below and extract all critical parameters required to draft a Method Statement (MOS) and an Inspection and Test Plan (ITP).
+
+Strictly adhere to the following extraction rules:
+1. Extract exact numerical values, temperature ranges, time limits, and ratios (e.g., mixing ratios, pot life, curing time, layer thickness). Do not guess or extrapolate; if a value is not stated, return "Not specified".
+2. Categorize substrate preparation requirements precisely as stated in the TDS.
+3. Identify all quality control verification points, tests, and acceptance criteria needed for an ITP inspection matrix.
+4. Output your response strictly in the JSON format specified below.
+
+Output ONLY the JSON object. No prose. No markdown fences. No commentary.
+
+{
+  "product": {
+    "name": "",
+    "manufacturer": "",
+    "tds_reference": "",
+    "category": "",
+    "description": ""
+  },
+  "critical_parameters": [
+    {"parameter": "", "value": "", "source_note": ""}
+  ],
+  "method_statement": {
+    "title": "Method Statement — <product name>",
+    "sections": [
+      {"number": "1", "heading": "SCOPE AND PURPOSE", "body": ""},
+      {"number": "2", "heading": "REFERENCED DOCUMENTS", "body": ""},
+      {"number": "3", "heading": "MATERIALS AND PRODUCT DATA", "body": ""},
+      {"number": "4", "heading": "SUBSTRATE PREPARATION", "body": ""},
+      {"number": "5", "heading": "MIXING AND APPLICATION", "body": ""},
+      {"number": "6", "heading": "CURING AND PROTECTION", "body": ""},
+      {"number": "7", "heading": "QUALITY CONTROL", "body": ""},
+      {"number": "8", "heading": "SAFETY AND ENVIRONMENT", "body": ""}
+    ]
+  },
+  "inspection_test_plan": {
+    "title": "Inspection & Test Plan — <product name>",
+    "rows": [
+      {
+        "activity": "",
+        "reference": "",
+        "checkpoint": "",
+        "acceptance_criteria": "",
+        "method": "",
+        "frequency": "",
+        "responsible": ""
+      }
+    ]
   }
-  .nicegui-content { padding: 0 !important; }
-  .q-page, .q-layout { background: #0b0b0b !important; }
-  .q-btn {
-    border-radius: 3px !important; text-transform: none !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-weight: 500 !important; min-height: 32px !important;
-    padding: 0 12px !important; font-size: 11px !important;
-    box-shadow: none !important;
-  }
-  .btn-primary { background: #5eead4 !important;
-                 color: #0b0b0b !important; font-weight: 700 !important; }
-  .btn-soft { background: #161616 !important; color: #e8e8e8 !important;
-              border: 1px solid #262626 !important; }
-  .q-field--outlined .q-field__control {
-    border-radius: 3px !important; background: #161616 !important;
-  }
-  .q-field--outlined .q-field__control:before { border-color: #262626 !important; }
-  .q-field--outlined.q-field--focused .q-field__control:after {
-    border-color: #5eead4 !important;
-  }
-  .q-field__label, .q-field__native, .q-field__input {
-    color: #e8e8e8 !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 12px !important;
-  }
-  .card { background: #101010; border: 1px solid #1e1e1e;
-          border-radius: 4px; padding: 16px; width: 100%;
-          box-sizing: border-box; }
-  .main-content { padding: 14px; padding-bottom: 40px;
-                  max-width: 760px; margin: 0 auto; width: 100%;
-                  box-sizing: border-box; }
-  .section-head { display: flex; justify-content: space-between;
-                  align-items: center; margin-bottom: 10px;
-                  padding-bottom: 6px; border-bottom: 1px solid #1e1e1e; }
-  .h1 { font-size: 16px; font-weight: 700; color: #e8e8e8;
-        letter-spacing: -0.02em; }
-  .muted { color: #808080; font-size: 11px; }
-  .mono-sm { font-size: 10px; color: #808080; }
-  .label { font-size: 9px; font-weight: 700; color: #5a5a5a;
-           text-transform: uppercase; letter-spacing: 0.14em; }
-  .app-header {
-    background: rgba(11,11,11,0.94); border-bottom: 1px solid #1e1e1e;
-    padding: 10px 14px; display: flex; align-items: center;
-    justify-content: space-between; box-sizing: border-box; width: 100%;
-  }
-  .app-header .brand { font-weight: 700; font-size: 12px; color: #e8e8e8; }
-  .app-header .brand::before {
-    content: '\\25CF '; color: #5eead4; font-size: 9px;
-    vertical-align: middle; margin-right: 4px;
-  }
-  .q-uploader { background: #161616 !important;
-                border: 1px dashed #262626 !important;
-                border-radius: 4px !important; width: 100% !important;
-                color: #e8e8e8 !important; }
-  .q-uploader__header { background: transparent !important;
-                        color: #e8e8e8 !important; }
-  .q-notification {
-    border-radius: 3px !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 11px !important; background: #161616 !important;
-    color: #e8e8e8 !important;
-    border: 1px solid #262626 !important;
-  }
-</style>
+}
+
+RULES FOR METHOD STATEMENT SECTIONS:
+- Each section "body" must be 3-8 sentences of professional QC prose.
+- Reference exact TDS values wherever they exist. If a value is missing, write "Not specified in TDS".
+- Do NOT invent clause numbers from standards that are not in the TDS. Only cite the TDS.
+- Be technically detailed — this will be issued as a site document and signed.
+- Return exactly 8 sections in the order shown. Keep the exact headings above.
+
+RULES FOR ITP ROWS:
+- Provide 10-15 rows covering: materials verification, substrate prep, mixing, application, curing, final inspection.
+- "acceptance_criteria" must quote the exact TDS limit when stated; otherwise "Not specified in TDS".
+- "frequency" must be one of: 100%, Batch, Daily, Per element, Random.
+- "responsible" must be one of: QC Engineer, Site Engineer, Foreman, Third Party.
+
+TDS TEXT STARTS BELOW
+--------
+__TDS_TEXT__
+--------
 """
 
 
-_OCR_PROMPT = (
-    "You are a precise OCR engine for handwritten and printed documents. "
-    "Read every character in this document exactly as it appears."
-    "\n\nCRITICAL RULES:"
-    "\n1. Detect the language automatically (Arabic, English, or mixed)."
-    "\n2. If the text is Arabic, transcribe it in correct right-to-left "
-    "reading order, word by word, preserving every letter."
-    "\n3. Do NOT translate. Do NOT summarize. Do NOT add commentary."
-    "\n4. Preserve line breaks exactly as they appear on the page."
-    "\n5. Return ONLY the raw extracted text. No quotes, no labels."
-    "\n6. If the image contains no readable text, return an empty string."
-)
-
-
-def _preprocess_for_ocr(file_bytes, mime_type):
-    mime = (mime_type or "image/jpeg").lower()
-    if mime == "application/pdf" or not mime.startswith("image/"):
-        return file_bytes, mime
+def _parse_json(raw):
+    if not raw:
+        return None
+    txt = raw.strip()
+    txt = re.sub(r'^```json\s*', '', txt)
+    txt = re.sub(r'^```\s*', '', txt)
+    txt = re.sub(r'\s*```$', '', txt)
+    start = txt.find('{')
+    end = txt.rfind('}')
+    if start == -1 or end == -1:
+        return None
     try:
-        from PIL import Image, ImageOps, ImageFilter
-        import io as _io
-        img = Image.open(_io.BytesIO(file_bytes))
-        img = ImageOps.exif_transpose(img)
-        if img.mode not in ("L", "RGB"):
-            img = img.convert("RGB")
-        w, h = img.size
-        longest = max(w, h)
-        if longest < 1400:
-            scale = 1400.0 / float(longest)
-            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-        elif longest > 2400:
-            scale = 2400.0 / float(longest)
-            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-        img = img.filter(ImageFilter.UnsharpMask(radius=1.4, percent=140,
-                                                  threshold=3))
-        buf = _io.BytesIO()
-        img.save(buf, format="JPEG", quality=92, optimize=True)
-        return buf.getvalue(), "image/jpeg"
-    except Exception as e:
-        print("[ocr] preprocess failed: " + repr(e))
-        return file_bytes, mime
+        return json.loads(txt[start:end + 1])
+    except Exception:
+        return None
 
 
-async def _ocr_handwriting(file_bytes, mime_type):
-    if not file_bytes:
-        return None, "Empty file."
+async def generate_mos_itp(tds_text, call_gemini_json_fn):
+    """Return {product, critical_parameters, method_statement,
+    inspection_test_plan} or {error}."""
+    text = (tds_text or "").strip()
+    if len(text) < 200:
+        return {"error": "Not enough text extracted from the TDS."}
+    prompt = _TDS_PROMPT_TEMPLATE.replace("__TDS_TEXT__", text[:30000])
     try:
-        from google.genai import types
+        raw = await call_gemini_json_fn(prompt, temperature=0.0,
+                                          timeout=120, max_tokens=8192)
     except Exception as e:
-        return None, "google-genai not available: " + repr(e)
-    payload, mime = _preprocess_for_ocr(file_bytes, mime_type)
+        return {"error": "AI call failed: " + repr(e)}
+    data = _parse_json(raw)
+    if not data:
+        return {"error": "AI returned unparseable JSON.",
+                "raw": (raw or "")[:1500]}
+    data.setdefault("product", {})
+    data.setdefault("critical_parameters", [])
+    data.setdefault("method_statement", {})
+    data.setdefault("inspection_test_plan", {})
+    return data
+
+
+# ---------------------------------------------------------------------
+# PDF BUILDERS
+# ---------------------------------------------------------------------
+def _ensure():
     try:
-        part = types.Part.from_bytes(data=payload, mime_type=mime)
-    except Exception as e:
-        return None, "Could not prepare file: " + repr(e)
-    try:
-        raw = await call_gemini_json([_OCR_PROMPT, part],
-                                       temperature=0.0, timeout=45)
-    except Exception as e:
-        return None, "AI call failed: " + str(e)
-    text = (raw or "").strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'", "`"):
-        text = text[1:-1].strip()
-    if not text:
-        return "", "No readable text found."
-    return text, None
+        svc._ensure_fonts()
+    except Exception:
+        pass
 
 
-def build_tds_ui():
-    ui.add_head_html(STYLE)
-
-    tstate = {"result": None, "running": False, "error": None, "filename": ""}
-
-    with ui.element('div').classes("app-header"):
-        ui.label("TDS → MOS & ITP").classes("brand")
-
-    content = ui.element('div').classes("main-content")
-
-    def render():
-        content.clear()
-        with content:
-            _render_body(tstate, render)
-
-    render()
+def _esc(s):
+    return (str(s or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;"))
 
 
-def _render_body(tstate, render):
-    with ui.element('div').classes("section-head"):
-        ui.label("TDS → MOS & ITP").classes("h1")
+def _mono_names():
+    return (getattr(svc, "_MONO_NAME", "Courier"),
+            getattr(svc, "_MONO_BOLD", "Courier-Bold"))
 
-        def _refresh():
-            tstate["result"] = None
-            tstate["error"] = None
-            render()
-        ui.button(icon="refresh", on_click=_refresh).props(
-            "flat round dense size=sm").style("color:#808080;")
 
-    ui.label(
-        "Upload a manufacturer Technical Data Sheet (PDF, DOCX, TXT, "
-        "or image). The tool extracts critical parameters with AI and "
-        "drafts a Method Statement + an Inspection & Test Plan."
-    ).classes("muted").style("margin-bottom:12px;line-height:1.6;")
+def build_mos_pdf(product, mos, critical_params=None):
+    _ensure()
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                     Table, TableStyle, HRFlowable)
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
 
-    with ui.element('div').classes("card").style("margin-bottom:12px;"):
-        upload_status = ui.label("").classes("mono-sm").style(
-            "margin-top:6px;display:block;min-height:16px;")
+    NAVY = colors.HexColor("#0a0a0a")
+    ACCENT = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
+    mono, mono_b = _mono_names()
 
-        async def _on_upload(e):
-            if tstate["running"]:
-                ui.notify("Already processing…", type="warning")
-                return
-            try:
-                data = await e.file.read()
-            except Exception as ex:
-                ui.notify("Read failed: " + str(ex), type="negative")
-                return
+    title_style = ParagraphStyle("T", fontName=mono_b, fontSize=14,
+                                  textColor=NAVY, spaceAfter=2, leading=18)
+    sub_style = ParagraphStyle("S", fontName=mono, fontSize=9,
+                                textColor=ACCENT, spaceAfter=6, leading=12)
+    h_style = ParagraphStyle("H", fontName=mono_b, fontSize=11,
+                              textColor=ACCENT, spaceBefore=10,
+                              spaceAfter=4, leading=14)
+    body_style = ParagraphStyle("B", fontName=mono, fontSize=9.5,
+                                 textColor=colors.black, leading=13.5)
+    label_style = ParagraphStyle("L", fontName=mono_b, fontSize=8,
+                                  textColor=NAVY, leading=11)
+    meta_style = ParagraphStyle("M", fontName=mono, fontSize=8.5,
+                                 textColor=GREY, leading=12)
+    small_style = ParagraphStyle("Sm", fontName=mono, fontSize=7,
+                                  textColor=GREY, leading=9)
 
-            name = (e.file.name or "").lower()
-            tstate["filename"] = e.file.name or ""
-            tstate["result"] = None
-            tstate["error"] = None
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=18 * mm, rightMargin=18 * mm,
+                            topMargin=18 * mm, bottomMargin=18 * mm)
 
-            upload_status.set_text("Extracting text from " +
-                                    (e.file.name or "file") + "…")
-            upload_status.style(
-                "margin-top:6px;display:block;min-height:16px;"
-                "color:#fbbf24;font-size:10px;")
+    story = []
+    story.append(Paragraph(_esc(mos.get("title") or
+                                 "METHOD STATEMENT"), title_style))
+    p = product or {}
+    sub_bits = []
+    if p.get("name"):
+        sub_bits.append(str(p["name"]))
+    if p.get("manufacturer"):
+        sub_bits.append(str(p["manufacturer"]))
+    story.append(Paragraph(_esc(" · ".join(sub_bits) or
+                                 "TDS-derived method statement"),
+                            sub_style))
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
+                             spaceAfter=10))
 
-            text = ""
-            try:
-                if name.endswith((".pdf", ".docx", ".txt", ".md")):
-                    text = await asyncio.to_thread(
-                        svc.extract_document_text, data, e.file.name)
-                elif name.endswith((".jpg", ".jpeg", ".png")):
-                    mime = ("image/jpeg"
-                            if name.endswith((".jpg", ".jpeg"))
-                            else "image/png")
-                    text, err = await _ocr_handwriting(data, mime)
-                    if err and not text:
-                        text = ""
-                else:
-                    text = await asyncio.to_thread(
-                        svc.extract_document_text, data, e.file.name)
-            except Exception as ex:
-                print("[tds] extract failed: " + repr(ex))
-                text = ""
+    meta_rows = [
+        [Paragraph("<b>Product:</b>", label_style),
+         Paragraph(_esc(str(p.get("name") or "Not specified")), meta_style),
+         Paragraph("<b>Manufacturer:</b>", label_style),
+         Paragraph(_esc(str(p.get("manufacturer") or "Not specified")),
+                    meta_style)],
+        [Paragraph("<b>TDS ref:</b>", label_style),
+         Paragraph(_esc(str(p.get("tds_reference") or "Not specified")),
+                    meta_style),
+         Paragraph("<b>Category:</b>", label_style),
+         Paragraph(_esc(str(p.get("category") or "Not specified")),
+                    meta_style)],
+        [Paragraph("<b>Date:</b>", label_style),
+         Paragraph(datetime.date.today().strftime("%Y-%m-%d"), meta_style),
+         Paragraph("", label_style), Paragraph("", meta_style)],
+    ]
+    t = Table(meta_rows, colWidths=[22 * mm, 68 * mm, 25 * mm, 65 * mm])
+    t.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 8))
 
-            if not text or len(text.strip()) < 100:
-                tstate["error"] = (
-                    "Could not read enough text from the file. "
-                    "Try a text-based PDF or DOCX."
-                )
-                upload_status.set_text("Failed: not enough text.")
-                upload_status.style(
-                    "margin-top:6px;display:block;min-height:16px;"
-                    "color:#f87171;font-size:10px;")
-                render()
-                return
+    desc = str(p.get("description") or "").strip()
+    if desc:
+        story.append(Paragraph(_esc(desc), body_style))
+        story.append(Spacer(1, 6))
 
-            upload_status.set_text(
-                "Extracted " + str(len(text)) + " chars. "
-                "Calling AI to draft MOS + ITP… (up to 2 min)")
+    if critical_params:
+        story.append(Paragraph("KEY PARAMETERS FROM TDS", h_style))
+        rows = [[
+            Paragraph("<b>Parameter</b>", label_style),
+            Paragraph("<b>Value</b>", label_style),
+            Paragraph("<b>Source</b>", label_style),
+        ]]
+        for cp in critical_params[:40]:
+            rows.append([
+                Paragraph(_esc(str(cp.get("parameter") or "")), body_style),
+                Paragraph(_esc(str(cp.get("value") or "")), body_style),
+                Paragraph(_esc(str(cp.get("source_note") or "")), meta_style),
+            ])
+        tt = Table(rows, colWidths=[55 * mm, 55 * mm, 50 * mm])
+        tt.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F5F5F5")),
+            ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        story.append(tt)
+        story.append(Spacer(1, 8))
 
-            tstate["running"] = True
-            try:
-                result = await tds.generate_mos_itp(text, call_gemini_json)
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                result = {"error": "AI failed: " + repr(ex)}
-            tstate["running"] = False
+    for sec in (mos.get("sections") or []):
+        num = str(sec.get("number") or "").strip()
+        head = str(sec.get("heading") or "").strip()
+        head_line = (num + ". " + head) if num else head
+        if not head_line:
+            continue
+        story.append(Paragraph(_esc(head_line), h_style))
+        body = str(sec.get("body") or "").strip()
+        for para in [x.strip() for x in body.split("\n") if x.strip()]:
+            story.append(Paragraph(_esc(para), body_style))
+            story.append(Spacer(1, 3))
 
-            if result.get("error"):
-                tstate["error"] = result["error"]
-            else:
-                tstate["result"] = result
-            render()
+    story.append(Spacer(1, 20))
+    sig = [
+        [Paragraph("<b>PREPARED BY (QC)</b>", label_style),
+         Paragraph("<b>APPROVED BY (CONSULTANT)</b>", label_style)],
+        [Paragraph("_" * 32, body_style), Paragraph("_" * 32, body_style)],
+        [Paragraph("Name / Date / Signature", small_style),
+         Paragraph("Name / Date / Signature", small_style)],
+    ]
+    ts = Table(sig, colWidths=[90 * mm, 90 * mm])
+    ts.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(ts)
 
-        ui.upload(on_upload=_on_upload, auto_upload=True).style(
-            "width:100%;").props(
-            "flat bordered accept=.pdf,.docx,.txt,.md,.jpg,.jpeg,.png "
-            "label='Upload TDS (PDF / DOCX / TXT / Image)'")
-        upload_status
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
 
-    if tstate.get("error"):
-        with ui.element('div').classes("card").style(
-            "border-left:3px solid #f87171;margin-bottom:12px;"
-        ):
-            ui.label("Error").style(
-                "font-size:11px;font-weight:700;color:#f87171;")
-            ui.label(str(tstate["error"])).classes("mono-sm").style(
-                "margin-top:4px;line-height:1.6;color:#b8b8b8;")
-            raw = tstate.get("result") or {}
-            if raw.get("raw"):
-                ui.label(str(raw["raw"])[:500]).classes("mono-sm").style(
-                    "margin-top:6px;color:#5a5a5a;font-size:9px;")
 
-    result = tstate.get("result")
-    if not result:
-        return
+def build_itp_pdf(product, itp):
+    _ensure()
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                     Table, TableStyle, HRFlowable)
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
 
-    product = result.get("product") or {}
-    mos = result.get("method_statement") or {}
-    itp = result.get("inspection_test_plan") or {}
-    crit = result.get("critical_parameters") or []
+    NAVY = colors.HexColor("#0a0a0a")
+    ACCENT = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
+    mono, mono_b = _mono_names()
 
-    with ui.element('div').style(
-        "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
-        "margin-bottom:12px;"
-    ):
-        def _mos_txt():
-            try:
-                lines = [mos.get("title") or "METHOD STATEMENT", "=" * 60]
-                if product.get("name"):
-                    lines.append("Product: " + str(product["name"]))
-                if product.get("manufacturer"):
-                    lines.append("Manufacturer: " + str(product["manufacturer"]))
-                lines.append("Date: " + datetime.date.today().strftime("%Y-%m-%d"))
-                lines.append("")
-                for sec in (mos.get("sections") or []):
-                    num = str(sec.get("number") or "").strip()
-                    head = str(sec.get("heading") or "").strip()
-                    head_line = (num + ". " + head) if num else head
-                    if not head_line:
-                        continue
-                    lines.append(head_line)
-                    lines.append("-" * len(head_line))
-                    body = str(sec.get("body") or "").strip()
-                    if body:
-                        lines.append(body)
-                    lines.append("")
-                ui.download("\n".join(lines).encode("utf-8"),
-                              filename="method_statement.txt")
-            except Exception as ex:
-                ui.notify("TXT failed: " + str(ex), type="negative")
+    title_style = ParagraphStyle("T", fontName=mono_b, fontSize=13,
+                                  textColor=NAVY, spaceAfter=2)
+    sub_style = ParagraphStyle("S", fontName=mono, fontSize=9,
+                                textColor=ACCENT, spaceAfter=6)
+    cell_style = ParagraphStyle("C", fontName=mono, fontSize=8,
+                                 textColor=colors.black, leading=10)
+    head_style = ParagraphStyle("H", fontName=mono_b, fontSize=8,
+                                 textColor=colors.white, leading=10)
+    small_style = ParagraphStyle("Sm", fontName=mono, fontSize=7,
+                                  textColor=GREY, leading=9)
 
-        def _itp_txt():
-            try:
-                lines = [itp.get("title") or "INSPECTION & TEST PLAN"]
-                for i, r in enumerate(itp.get("rows") or [], start=1):
-                    lines.append(
-                        str(i) + ". " + str(r.get("activity") or "") +
-                        " | " + str(r.get("acceptance_criteria") or "")
-                    )
-                ui.download("\n".join(lines).encode("utf-8"),
-                              filename="inspection_test_plan.txt")
-            except Exception as ex:
-                ui.notify("TXT failed: " + str(ex), type="negative")
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            leftMargin=14 * mm, rightMargin=14 * mm,
+                            topMargin=14 * mm, bottomMargin=14 * mm)
 
-        def _dl_mos():
-            try:
-                pdf = tds.build_mos_pdf(product, mos, crit)
-                ui.download(pdf, filename="method_statement.pdf")
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                ui.notify("PDF failed: " + str(ex), type="negative")
+    story = []
+    story.append(Paragraph(_esc(itp.get("title") or
+                                 "INSPECTION & TEST PLAN"), title_style))
+    p = product or {}
+    sub_bits = []
+    if p.get("name"):
+        sub_bits.append(str(p["name"]))
+    if p.get("manufacturer"):
+        sub_bits.append(str(p["manufacturer"]))
+    story.append(Paragraph(_esc(" · ".join(sub_bits) or
+                                 "TDS-derived ITP"), sub_style))
+    story.append(HRFlowable(width="100%", thickness=0.8, color=ACCENT,
+                             spaceAfter=10))
 
-        def _dl_itp():
-            try:
-                pdf = tds.build_itp_pdf(product, itp)
-                ui.download(pdf, filename="inspection_test_plan.pdf")
-            except Exception as ex:
-                import traceback
-                traceback.print_exc()
-                ui.notify("PDF failed: " + str(ex), type="negative")
-
-        ui.button("Method Statement — TXT", icon="description",
-                  on_click=_mos_txt).classes("btn-soft").style(
-            "width:100%;font-size:10px;")
-        ui.button("ITP — TXT", icon="description",
-                  on_click=_itp_txt).classes("btn-soft").style(
-            "width:100%;font-size:10px;")
-        ui.button("Method Statement — PDF", icon="picture_as_pdf",
-                  on_click=_dl_mos).classes("btn-primary").style(
-            "width:100%;font-size:10px;")
-        ui.button("ITP — PDF", icon="picture_as_pdf",
-                  on_click=_dl_itp).classes("btn-primary").style(
-            "width:100%;font-size:10px;")
-
-    with ui.element('div').classes("card").style("margin-bottom:12px;"):
-        ui.label("PRODUCT").classes("label")
-        ui.label(str(product.get("name") or "Not specified")).style(
-            "font-size:14px;font-weight:700;color:#e8e8e8;margin-top:4px;")
-        bits = []
-        if product.get("manufacturer"):
-            bits.append("Mfr: " + str(product["manufacturer"]))
-        if product.get("tds_reference"):
-            bits.append("TDS: " + str(product["tds_reference"]))
-        if product.get("category"):
-            bits.append("Cat: " + str(product["category"]))
-        if bits:
-            ui.label(" · ".join(bits)).classes("mono-sm").style(
-                "margin-top:4px;color:#b8b8b8;")
-
-    with ui.element('div').classes("card").style("margin-bottom:12px;"):
-        ui.html(
-            '<div style="font-size:15px;font-weight:700;color:#5eead4;'
-            'border-bottom:1px solid rgba(94,234,212,0.3);'
-            'padding-bottom:8px;margin-bottom:12px;letter-spacing:-0.01em;">'
-            + _html_mod.escape(mos.get("title") or "METHOD STATEMENT") +
-            '</div>'
-        )
-        for sec in (mos.get("sections") or []):
-            num = str(sec.get("number") or "").strip()
-            head = str(sec.get("heading") or "").strip()
-            head_line = (num + ". " + head) if num else head
-            if not head_line:
-                continue
-            ui.html(
-                '<div style="font-size:12px;font-weight:700;color:#5eead4;'
-                'margin-top:14px;margin-bottom:4px;letter-spacing:0.02em;">'
-                + _html_mod.escape(head_line) + '</div>'
-            )
-            body = str(sec.get("body") or "").strip()
-            if body:
-                ui.html(
-                    '<pre style="margin:0 0 4px 0;white-space:pre-wrap;'
-                    'word-break:break-word;font-family:inherit;'
-                    'font-size:12px;line-height:1.7;color:#d0d0d0;">'
-                    + _html_mod.escape(body) + '</pre>'
-                )
-
-    with ui.element('div').classes("card").style("margin-bottom:12px;"):
-        ui.html(
-            '<div style="font-size:15px;font-weight:700;color:#5eead4;'
-            'border-bottom:1px solid rgba(94,234,212,0.3);'
-            'padding-bottom:8px;margin-bottom:12px;letter-spacing:-0.01em;">'
-            + _html_mod.escape(itp.get("title") or "INSPECTION & TEST PLAN") +
-            '</div>'
-        )
-        rows = itp.get("rows") or []
-        if not rows:
-            ui.label("No ITP rows generated.").classes("muted")
-        else:
-            html = ('<table style="width:100%;border-collapse:collapse;'
-                    'font-size:10.5px;">'
-                    '<thead><tr style="background:#0a0a0a;">')
-            for h in ["#", "Activity", "Reference", "Checkpoint",
-                      "Acceptance criteria", "Method", "Freq.", "Resp."]:
-                html += ('<th style="text-align:left;padding:6px;'
-                         'font-size:9px;letter-spacing:0.12em;color:#5eead4;'
-                         'text-transform:uppercase;'
-                         'border-bottom:1px solid #1e1e1e;">'
-                         + _html_mod.escape(h) + '</th>')
-            html += '</tr></thead><tbody>'
-            for i, r in enumerate(rows, start=1):
-                html += '<tr style="border-bottom:1px solid #1e1e1e;">'
-                for j, c in enumerate([
-                    str(i), str(r.get("activity") or ""),
-                    str(r.get("reference") or ""), str(r.get("checkpoint") or ""),
-                    str(r.get("acceptance_criteria") or ""),
-                    str(r.get("method") or ""), str(r.get("frequency") or ""),
-                    str(r.get("responsible") or ""),
-                ]):
-                    col = "#e8e8e8" if j == 0 else "#d0d0d0"
-                    html += ('<td style="padding:6px;vertical-align:top;'
-                             'color:' + col + ';font-size:10.5px;'
-                             'line-height:1.45;">'
-                             + _html_mod.escape(c) + '</td>')
-                html += '</tr>'
-            html += '</tbody></table>'
-            ui.html(html)
+    head = ["#", "Activity", "Reference", "Checkpoint",
+            "Acceptance criteria", "Method", "Frequency", "Responsible"]
+    data = [[Paragraph("<b>" + h + "</b>", head_style) for h in head]]
+    for i, r in enumerate(itp.get("rows") or [], start=1):
+        data.append([
+            Paragraph(str(i), cell_style),
+            Paragraph(_esc(str(r.get("activity") or "")), cell_style),
+            Paragraph(_esc(str(r.get("reference") or "")), cell_style),
+            Paragraph(_esc(str(r.get("checkpoint") or "")), cell_style),
+            Paragraph(_esc(str(r.get("acceptance_criteria") or "")),
+                      cell_style),
+            Paragraph(_esc(str(r.get("method") or "")), cell_style),
+            Paragraph(_esc(str(r.get("frequency") or "")), cell_style),
+            Paragraph(_esc(str(r.get("responsible") or "")), cell_style),
+        ])
+    col_w = [8 * mm, 30 * mm, 24 * mm, 34 * mm, 48 * mm, 30 * mm,
+             20 * mm, 22 * mm]
+    t = Table(data, colWidths=col_w, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1),
+         [colors.white, colors.HexColor("#F5F5F5")]),
+        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor("#BFBFBF")),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Generated " +
+                            datetime.date.today().strftime("%Y-%m-%d"),
+                            small_style))
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
