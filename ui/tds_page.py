@@ -71,6 +71,8 @@ STYLE = """
     content: '\\25CF '; color: #5eead4; font-size: 9px;
     vertical-align: middle; margin-right: 4px;
   }
+
+  /* ---------- Uploader: centered, plus on top, outline plus ---------- */
   .q-uploader { background: #161616 !important;
                 border: 1px dashed #262626 !important;
                 border-radius: 4px !important; width: 100% !important;
@@ -80,8 +82,8 @@ STYLE = """
                         flex-direction: column !important;
                         align-items: center !important;
                         justify-content: center !important;
-                        padding: 22px 12px !important;
-                        gap: 12px !important;
+                        padding: 18px 12px 14px !important;
+                        gap: 10px !important;
                         min-height: auto !important; }
   .q-uploader__header-content {
     flex: unset !important;
@@ -93,21 +95,24 @@ STYLE = """
   .q-uploader__header .q-btn,
   .q-uploader__pick {
     order: -1 !important;
-    background: #5eead4 !important;
-    color: #0b0b0b !important;
+    background: transparent !important;
+    color: #5eead4 !important;
+    border: 1px solid #5eead4 !important;
     border-radius: 50% !important;
-    min-width: 56px !important;
-    min-height: 56px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
     padding: 0 !important;
   }
   .q-uploader__header .q-btn .q-icon,
   .q-uploader__pick .q-icon {
-    font-size: 28px !important;
+    font-size: 22px !important;
+    color: #5eead4 !important;
   }
-  .q-uploader__title, .q-uploader__subtitle { color: #e8e8e8 !important;
-                                              text-align: center !important; }
-  .q-uploader__title { font-size: 12px !important; }
-  .q-uploader__subtitle { font-size: 10px !important; color: #808080 !important; }
+  .q-uploader__title, .q-uploader__subtitle {
+    color: #e8e8e8 !important; text-align: center !important; }
+  .q-uploader__title { font-size: 11px !important; }
+  .q-uploader__subtitle { font-size: 9px !important;
+                          color: #808080 !important; }
   .q-uploader .q-btn { color: #808080 !important; }
   .q-uploader__list { background: transparent !important; }
   .q-uploader__list .q-item { background: #101010 !important;
@@ -126,28 +131,29 @@ STYLE = """
                 padding: 6px; margin-top: 6px;
                 background: #161616; }
 
-  /* Flow diagram — smaller, placed at top */
+  /* ---------- Flow diagram — extra small ---------- */
   .flow-wrap { display: flex; align-items: center;
-               justify-content: center; gap: 8px;
-               max-width: 620px; margin: 10px auto 0;
+               justify-content: center; gap: 6px;
+               max-width: 460px; margin: 8px auto 0;
                padding: 0 14px; box-sizing: border-box;
                flex-wrap: wrap; }
   .flow-box { background: #101010; border: 1px solid #262626;
-              border-radius: 3px; padding: 6px 10px;
-              min-width: 110px; flex: 1;
+              border-radius: 3px; padding: 4px 8px;
+              min-width: 84px; flex: 1;
               text-align: center;
               font-family: 'JetBrains Mono', monospace; }
-  .flow-num { font-size: 8px; font-weight: 700; color: #5eead4;
-              letter-spacing: 0.12em; margin-bottom: 2px;
+  .flow-num { font-size: 7px; font-weight: 700; color: #5eead4;
+              letter-spacing: 0.1em; margin-bottom: 1px;
               text-transform: uppercase; }
-  .flow-title { font-size: 10px; font-weight: 700; color: #e8e8e8;
-                margin-bottom: 1px; }
-  .flow-sub { font-size: 9px; color: #808080; line-height: 1.4; }
-  .flow-arrow { color: #5eead4; font-size: 12px; font-weight: 700;
+  .flow-title { font-size: 9px; font-weight: 700; color: #e8e8e8;
+                margin-bottom: 0; }
+  .flow-sub { font-size: 8px; color: #808080; line-height: 1.3; }
+  .flow-arrow { color: #5eead4; font-size: 10px; font-weight: 700;
                 font-family: 'JetBrains Mono', monospace; }
-  .flow-time { text-align: center; font-size: 9.5px; color: #5a5a5a;
-               margin: 6px 0 12px;
+  .flow-time { text-align: center; font-size: 9px; color: #5a5a5a;
+               margin: 5px 0 10px;
                font-family: 'JetBrains Mono', monospace; }
+
   .example-btn { color: #5eead4 !important; font-size: 11px !important;
                  font-weight: 600 !important;
                  font-family: 'JetBrains Mono', monospace !important;
@@ -173,7 +179,7 @@ STYLE = """
   .footer-copy { color: #3a3a3a; font-size: 9.5px; margin-top: 10px;
                  letter-spacing: 0.04em; }
 
-  /* Collapsible feedback */
+  /* ---------- Collapsible feedback ---------- */
   .feedback-trigger { position: fixed; bottom: 14px; right: 16px;
                       display: flex; align-items: center;
                       cursor: pointer; z-index: 600;
@@ -397,17 +403,14 @@ def _render_footer():
 def _render_feedback_bar():
     from services import feedback_db
 
-    # Full-screen invisible overlay when panel is open
     overlay = ui.element('div').classes("feedback-overlay")
     overlay.style("display:none;")
 
-    # Collapsed trigger
     trigger = ui.element('div').classes("feedback-trigger")
     with trigger:
         ui.label("Feedback").classes("feedback-word")
         ui.label("»").classes("feedback-arrow")
 
-    # Expanded panel
     panel = ui.element('div').classes("feedback-bar")
     panel.style("display:none;")
     with panel:
@@ -460,7 +463,6 @@ def build_tds_ui():
         with ui.element('div').classes("app-header"):
             ui.label("TDS → MOS & ITP").classes("brand")
 
-        # Smaller flow diagram at the top
         with ui.element('div').classes("flow-wrap"):
             with ui.element('div').classes("flow-box"):
                 ui.html('<div class="flow-num">1. Upload</div>'
