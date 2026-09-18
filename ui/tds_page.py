@@ -30,7 +30,7 @@ STYLE = """
     padding: 0 12px !important; font-size: 11px !important;
     box-shadow: none !important;
   }
-  .btn-primary { background: #5eead4 !important;
+  .btn-primary { background: #14b8a6 !important;
                  color: #0b0b0b !important; font-weight: 700 !important; }
   .btn-soft { background: #161616 !important; color: #e8e8e8 !important;
               border: 1px solid #262626 !important; }
@@ -39,7 +39,7 @@ STYLE = """
   }
   .q-field--outlined .q-field__control:before { border-color: #262626 !important; }
   .q-field--outlined.q-field--focused .q-field__control:after {
-    border-color: #5eead4 !important;
+    border-color: #14b8a6 !important;
   }
   .q-field__label, .q-field__native, .q-field__input {
     color: #e8e8e8 !important;
@@ -65,7 +65,7 @@ STYLE = """
   }
   .app-header .brand { font-weight: 700; font-size: 12px; color: #e8e8e8; }
   .app-header .brand::before {
-    content: '\\25CF '; color: #5eead4; font-size: 9px;
+    content: '\\25CF '; color: #14b8a6; font-size: 9px;
     vertical-align: middle; margin-right: 4px;
   }
 
@@ -78,45 +78,46 @@ STYLE = """
                 font-family: 'JetBrains Mono', monospace; }
   .page-title-refresh { position: absolute; top: 30px; right: 18px; }
 
-  /* Uploader: centered, plus on top, outline plus */
+  /* Uploader: compact horizontal, centered, small plus */
   .q-uploader { background: #161616 !important;
                 border: 1px dashed #262626 !important;
                 border-radius: 4px !important; width: 100% !important;
                 color: #e8e8e8 !important; }
   .q-uploader__header { background: transparent !important;
                         color: #e8e8e8 !important;
-                        flex-direction: column !important;
+                        flex-direction: row !important;
                         align-items: center !important;
                         justify-content: center !important;
-                        padding: 18px 12px 14px !important;
-                        gap: 10px !important;
+                        padding: 10px 14px !important;
+                        gap: 12px !important;
                         min-height: auto !important; }
   .q-uploader__header-content {
     flex: unset !important;
-    text-align: center !important;
+    text-align: left !important;
     margin: 0 !important;
     padding: 0 !important;
-    width: 100% !important;
+    width: auto !important;
   }
   .q-uploader__header .q-btn,
   .q-uploader__pick {
-    order: -1 !important;
     background: transparent !important;
-    color: #5eead4 !important;
-    border: 1px solid #5eead4 !important;
+    color: #14b8a6 !important;
+    border: 1px solid #14b8a6 !important;
     border-radius: 50% !important;
-    min-width: 44px !important;
-    min-height: 44px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
     padding: 0 !important;
+    margin: 0 !important;
+    flex-shrink: 0 !important;
   }
   .q-uploader__header .q-btn .q-icon,
   .q-uploader__pick .q-icon {
-    font-size: 22px !important;
-    color: #5eead4 !important;
+    font-size: 18px !important;
+    color: #14b8a6 !important;
   }
   .q-uploader__title, .q-uploader__subtitle {
-    color: #e8e8e8 !important; text-align: center !important; }
-  .q-uploader__title { font-size: 14px !important;
+    color: #e8e8e8 !important; text-align: left !important; }
+  .q-uploader__title { font-size: 13px !important;
                        font-weight: 600 !important;
                        letter-spacing: -0.01em !important; }
   .q-uploader__subtitle { font-size: 10px !important;
@@ -139,10 +140,10 @@ STYLE = """
                 padding: 6px; margin-top: 6px;
                 background: #161616; }
 
-  /* Flow diagram — extra small */
+  /* Flow diagram — small */
   .flow-wrap { display: flex; align-items: center;
                justify-content: center; gap: 6px;
-               max-width: 460px; margin: 8px auto 0;
+               max-width: 460px; margin: 4px auto 0;
                padding: 0 14px; box-sizing: border-box;
                flex-wrap: wrap; }
   .flow-box { background: #101010; border: 1px solid #262626;
@@ -150,19 +151,19 @@ STYLE = """
               min-width: 84px; flex: 1;
               text-align: center;
               font-family: 'JetBrains Mono', monospace; }
-  .flow-num { font-size: 7px; font-weight: 700; color: #5eead4;
+  .flow-num { font-size: 7px; font-weight: 700; color: #14b8a6;
               letter-spacing: 0.1em; margin-bottom: 1px;
               text-transform: uppercase; }
   .flow-title { font-size: 9px; font-weight: 700; color: #e8e8e8;
                 margin-bottom: 0; }
   .flow-sub { font-size: 8px; color: #808080; line-height: 1.3; }
-  .flow-arrow { color: #5eead4; font-size: 10px; font-weight: 700;
+  .flow-arrow { color: #14b8a6; font-size: 10px; font-weight: 700;
                 font-family: 'JetBrains Mono', monospace; }
   .flow-time { text-align: center; font-size: 9px; color: #5a5a5a;
-               margin: 5px 0 10px;
+               margin: 5px 0 14px;
                font-family: 'JetBrains Mono', monospace; }
 
-  .example-btn { color: #5eead4 !important; font-size: 11px !important;
+  .example-btn { color: #14b8a6 !important; font-size: 11px !important;
                  font-weight: 600 !important;
                  font-family: 'JetBrains Mono', monospace !important;
                  padding: 0 !important; margin-top: 10px !important;
@@ -187,7 +188,7 @@ STYLE = """
   .footer-copy { color: #3a3a3a; font-size: 9.5px; margin-top: 10px;
                  letter-spacing: 0.04em; }
 
-  /* Inline feedback trigger — centered just above the footer line */
+  /* Inline feedback trigger */
   .feedback-trigger-inline {
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; padding: 6px 10px;
@@ -198,7 +199,7 @@ STYLE = """
   .feedback-trigger-inline:hover .feedback-word {
     text-decoration: underline;
   }
-  .feedback-word { color: #5eead4; font-size: 12px; font-weight: 600;
+  .feedback-word { color: #14b8a6; font-size: 12px; font-weight: 600;
                    letter-spacing: 0.04em; }
   .feedback-arrow { color: #4a4a4a; font-size: 12px;
                     font-weight: 400; margin-left: 5px;
@@ -222,7 +223,7 @@ STYLE = """
                   border-radius: 0; padding: 10px 10px 10px 14px;
                   min-height: 96px;
                   transition: border-color 0.15s; }
-  .feedback-row:focus-within { border-color: #5eead4; }
+  .feedback-row:focus-within { border-color: #14b8a6; }
   .feedback-input { flex: 1; }
   .feedback-input .q-field__control {
     background: transparent !important; border: none !important;
@@ -239,7 +240,7 @@ STYLE = """
     font-family: 'JetBrains Mono', monospace !important;
     padding: 6px 0 !important;
   }
-  .feedback-send { background: #5eead4 !important;
+  .feedback-send { background: #14b8a6 !important;
                    color: #0b0b0b !important;
                    border-radius: 3px !important;
                    min-width: 34px !important;
@@ -397,7 +398,6 @@ async def _ocr_handwriting(file_bytes, mime_type):
 
 def _render_footer(open_feedback_fn):
     with ui.element('div').classes("footer-wrap"):
-        # Feedback trigger centered, directly above the made-by line
         trigger = ui.element('div').classes("feedback-trigger-inline")
         with trigger:
             ui.label("Feedback").classes("feedback-word")
@@ -474,7 +474,6 @@ def build_tds_ui():
 
     tstate = {"result": None, "running": False, "error": None, "filename": ""}
 
-    # The refresh button needs to reference `render` defined below.
     refresh_holder = {"fn": None}
 
     def _do_refresh():
@@ -487,32 +486,11 @@ def build_tds_ui():
         with ui.element('div').classes("app-header"):
             ui.label("TDS → MOS & ITP").classes("brand")
 
-        # Big centered page title
         with ui.element('div').classes("page-title-wrap"):
             ui.label("TDS → MOS & ITP").classes("page-title")
             with ui.element('div').classes("page-title-refresh"):
                 ui.button(icon="refresh", on_click=_do_refresh).props(
                     "flat round dense size=sm").style("color:#808080;")
-
-        # Flow diagram — small, below the title
-        with ui.element('div').classes("flow-wrap"):
-            with ui.element('div').classes("flow-box"):
-                ui.html('<div class="flow-num">1. Upload</div>'
-                        '<div class="flow-title">Drop a TDS</div>'
-                        '<div class="flow-sub">PDF / DOCX / TXT / Image</div>')
-            ui.html('<div class="flow-arrow">&rarr;</div>')
-            with ui.element('div').classes("flow-box"):
-                ui.html('<div class="flow-num">2. AI Reads</div>'
-                        '<div class="flow-title">Extracts parameters</div>'
-                        '<div class="flow-sub">Product data &amp; limits</div>')
-            ui.html('<div class="flow-arrow">&rarr;</div>')
-            with ui.element('div').classes("flow-box"):
-                ui.html('<div class="flow-num">3. Download</div>'
-                        '<div class="flow-title">MOS + ITP</div>'
-                        '<div class="flow-sub">PDF or TXT</div>')
-        ui.html('<div class="flow-time">'
-                'Typical generation time: 45&ndash;90 seconds.'
-                '</div>')
 
         content = ui.element('div').classes("page-main main-content")
 
@@ -524,19 +502,37 @@ def build_tds_ui():
         refresh_holder["fn"] = render
         render()
 
-        # Feedback panel (hidden) + open function
         open_feedback = _render_feedback_panel()
-
-        # Footer with centered feedback trigger above the made-by line
         _render_footer(open_feedback)
 
 
 def _render_body(tstate, render):
+    # Description first
     ui.label(
         "Upload a manufacturer Technical Data Sheet (PDF, DOCX, TXT, "
         "or image). The tool extracts critical parameters with AI and "
         "drafts a Method Statement + an Inspection & Test Plan."
-    ).classes("muted").style("margin-bottom:12px;line-height:1.6;")
+    ).classes("muted").style("margin-bottom:14px;line-height:1.6;")
+
+    # 3-step strip — now below the description
+    with ui.element('div').classes("flow-wrap"):
+        with ui.element('div').classes("flow-box"):
+            ui.html('<div class="flow-num">1. Upload</div>'
+                    '<div class="flow-title">Drop a TDS</div>'
+                    '<div class="flow-sub">PDF / DOCX / TXT / Image</div>')
+        ui.html('<div class="flow-arrow">&rarr;</div>')
+        with ui.element('div').classes("flow-box"):
+            ui.html('<div class="flow-num">2. AI Reads</div>'
+                    '<div class="flow-title">Extracts parameters</div>'
+                    '<div class="flow-sub">Product data &amp; limits</div>')
+        ui.html('<div class="flow-arrow">&rarr;</div>')
+        with ui.element('div').classes("flow-box"):
+            ui.html('<div class="flow-num">3. Download</div>'
+                    '<div class="flow-title">MOS + ITP</div>'
+                    '<div class="flow-sub">PDF or TXT</div>')
+    ui.html('<div class="flow-time">'
+            'Typical generation time: 45&ndash;90 seconds.'
+            '</div>')
 
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         upload_status = ui.label("").classes("mono-sm").style(
@@ -841,7 +837,7 @@ def _render_body(tstate, render):
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.html(
             '<div style="font-size:15px;font-weight:700;'
-            'color:#5eead4;border-bottom:1px solid rgba(94,234,212,0.3);'
+            'color:#14b8a6;border-bottom:1px solid rgba(20,184,166,0.3);'
             'padding-bottom:8px;margin-bottom:12px;'
             'letter-spacing:-0.01em;">' +
             _html_mod.escape(mos.get("title") or "METHOD STATEMENT") +
@@ -855,7 +851,7 @@ def _render_body(tstate, render):
                 continue
             ui.html(
                 '<div style="font-size:12px;font-weight:700;'
-                'color:#5eead4;margin-top:14px;margin-bottom:4px;'
+                'color:#14b8a6;margin-top:14px;margin-bottom:4px;'
                 'letter-spacing:0.02em;">' +
                 _html_mod.escape(head_line) + '</div>'
             )
@@ -871,7 +867,7 @@ def _render_body(tstate, render):
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.html(
             '<div style="font-size:15px;font-weight:700;'
-            'color:#5eead4;border-bottom:1px solid rgba(94,234,212,0.3);'
+            'color:#14b8a6;border-bottom:1px solid rgba(20,184,166,0.3);'
             'padding-bottom:8px;margin-bottom:12px;'
             'letter-spacing:-0.01em;">' +
             _html_mod.escape(itp.get("title") or "INSPECTION & TEST PLAN") +
@@ -890,7 +886,7 @@ def _render_body(tstate, render):
             for h in heads:
                 html += ('<th style="text-align:left;padding:6px 6px;'
                          'font-size:9px;letter-spacing:0.12em;'
-                         'color:#5eead4;text-transform:uppercase;'
+                         'color:#14b8a6;text-transform:uppercase;'
                          'border-bottom:1px solid #1e1e1e;">' +
                          _html_mod.escape(h) + '</th>')
             html += '</tr></thead><tbody>'
