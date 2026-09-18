@@ -500,8 +500,7 @@ def _render_company_header_panel(tstate, render):
 
     # Toggle bar
     arrow = "▼" if hdr.get("expanded") else "▶"
-    label = ("Add company header (optional)" if not _header_has_content(hdr)
-             else "Company header (added)")
+    label = "Company header (optional)"
     toggle = ui.element('div').classes("hdr-toggle")
     with toggle:
         ui.label(arrow).classes("hdr-arrow")
@@ -1055,14 +1054,14 @@ def _render_body(tstate, render):
                   on_click=_dl_itp_no_header).classes("btn-soft").style(
             "width:100%;font-size:10px;")
 
-        # Row 3: PDF with header (only if header has content)
-        if hdr_present:
-            ui.button("MOS PDF — with header", icon="picture_as_pdf",
-                      on_click=_dl_mos_with_header).classes(
-                "btn-primary").style("width:100%;font-size:10px;")
-            ui.button("ITP PDF — with header", icon="picture_as_pdf",
-                      on_click=_dl_itp_with_header).classes(
-                "btn-primary").style("width:100%;font-size:10px;")
+        # Row 3: PDF with header — always visible. If the panel is empty,
+        # this produces the same PDF as the no-header button.
+        ui.button("MOS PDF — with header", icon="picture_as_pdf",
+                  on_click=_dl_mos_with_header).classes(
+            "btn-primary").style("width:100%;font-size:10px;")
+        ui.button("ITP PDF — with header", icon="picture_as_pdf",
+                  on_click=_dl_itp_with_header).classes(
+            "btn-primary").style("width:100%;font-size:10px;")
 
     # -------- Product card --------
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
