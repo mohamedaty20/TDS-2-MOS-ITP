@@ -96,13 +96,21 @@ STYLE = """
                 padding: 6px; margin-top: 6px;
                 background: #161616; }
 
-.footer-wrap { max-width: 760px; margin: 0 auto;
-                 padding: 24px 14px 140px;
-                 box-sizing: border-box; }
+  .page-shell { display: flex; flex-direction: column;
+                min-height: 100vh; width: 100%; }
+  .page-main { flex: 1 1 auto; width: 100%; }
+  .footer-wrap { width: 100%; padding: 40px 14px 140px;
+                 box-sizing: border-box; text-align: center; }
   .footer-line { font-size: 10px; color: #4a4a4a;
-                 text-align: center; line-height: 1.7;
+                 text-align: center; line-height: 1.9;
                  font-family: 'JetBrains Mono', monospace;
-                 letter-spacing: 0.02em; }
+                 letter-spacing: 0.02em;
+                 max-width: 620px; margin: 0 auto; }
+  .footer-line .sep { color: #333333; margin: 0 6px; }
+  .footer-note { color: #3a3a3a; font-size: 9.5px; margin-top: 6px;
+                 line-height: 1.7; }
+  .footer-copy { color: #3a3a3a; font-size: 9.5px; margin-top: 10px;
+                 letter-spacing: 0.04em; }
   .feedback-bar { position: fixed; bottom: 0; left: 0; right: 0;
                   background: rgba(11,11,11,0.96);
                   backdrop-filter: blur(8px);
@@ -218,8 +226,17 @@ async def _ocr_handwriting(file_bytes, mime_type):
 def _render_footer():
     ui.html(
         '<div class="footer-line">'
-        'Made by Mohamed Abd Al Aty · Construction Engineer · '
-        'AI Product Builder'
+        'Made by Mohamed Abd Al Aty'
+        '<span class="sep">·</span>Construction Engineer'
+        '<span class="sep">·</span>AI Product Builder'
+        '<div class="footer-note">'
+        'Built with a highly trained AI module. All outputs should be '
+        'reviewed and verified by a qualified engineer before use in '
+        'decision-making.'
+        '</div>'
+        '<div class="footer-copy">'
+        '© 2026 Mohamed Abd Al Aty. All rights reserved.'
+        '</div>'
         '</div>'
     )
 
@@ -260,20 +277,21 @@ def build_tds_ui():
 
     tstate = {"result": None, "running": False, "error": None, "filename": ""}
 
-    with ui.element('div').classes("app-header"):
-        ui.label("TDS → MOS & ITP").classes("brand")
+    with ui.element('div').classes("page-shell"):
+        with ui.element('div').classes("app-header"):
+            ui.label("TDS → MOS & ITP").classes("brand")
 
-    content = ui.element('div').classes("main-content")
+        content = ui.element('div').classes("page-main main-content")
 
-    def render():
-        content.clear()
-        with content:
-            _render_body(tstate, render)
+        def render():
+            content.clear()
+            with content:
+                _render_body(tstate, render)
 
-    render()
+        render()
 
-    with ui.element('div').classes("footer-wrap"):
-        _render_footer()
+        with ui.element('div').classes("footer-wrap"):
+            _render_footer()
 
     _render_feedback_bar()
 
