@@ -95,6 +95,50 @@ STYLE = """
                 border: 1px solid #1e1e1e; border-radius: 3px;
                 padding: 6px; margin-top: 6px;
                 background: #161616; }
+
+.footer-wrap { max-width: 760px; margin: 0 auto;
+                 padding: 24px 14px 140px;
+                 box-sizing: border-box; }
+  .footer-line { font-size: 10px; color: #4a4a4a;
+                 text-align: center; line-height: 1.7;
+                 font-family: 'JetBrains Mono', monospace;
+                 letter-spacing: 0.02em; }
+  .feedback-bar { position: fixed; bottom: 0; left: 0; right: 0;
+                  background: rgba(11,11,11,0.96);
+                  backdrop-filter: blur(8px);
+                  -webkit-backdrop-filter: blur(8px);
+                  border-top: 1px solid #1e1e1e;
+                  padding: 10px 14px 12px; z-index: 500; }
+  .feedback-inner { max-width: 760px; margin: 0 auto; }
+  .feedback-hint { font-size: 10px; color: #5a5a5a;
+                   margin-bottom: 6px; display: block;
+                   font-family: 'JetBrains Mono', monospace; }
+  .feedback-row { display: flex; gap: 8px; align-items: center;
+                  background: #161616; border: 1px solid #262626;
+                  border-radius: 22px; padding: 4px 4px 4px 14px;
+                  transition: border-color 0.15s; }
+  .feedback-row:focus-within { border-color: #5eead4; }
+  .feedback-input .q-field__control {
+    background: transparent !important; border: none !important;
+    min-height: 32px !important;
+  }
+  .feedback-input .q-field__control:before,
+  .feedback-input .q-field__control:after {
+    border: none !important;
+  }
+  .feedback-input .q-field__native,
+  .feedback-input .q-field__input {
+    color: #e8e8e8 !important; font-size: 12px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    padding: 6px 0 !important;
+  }
+  .feedback-send { background: #5eead4 !important;
+                   color: #0b0b0b !important;
+                   border-radius: 50% !important;
+                   min-width: 34px !important;
+                   min-height: 34px !important;
+                   padding: 0 !important; }
+  .feedback-send .q-icon { font-size: 16px !important; }
 </style>
 """
 
@@ -171,7 +215,45 @@ async def _ocr_handwriting(file_bytes, mime_type):
     if not text:
         return "", "No readable text found."
     return text, None
+def _render_footer():
+    ui.html(
+        '<div class="footer-line">'
+        'Made by Mohamed Abd Al Aty · Construction Engineer · '
+        'AI Product Builder'
+        '</div>'
+    )
 
+
+def _render_feedback_bar():
+    from services import feedback_db
+
+    with ui.element('div').classes("feedback-bar"):
+        with ui.element('div').classes("feedback-inner"):
+            ui.label(
+                "Your feedback is valuable for making the tool better."
+            ).classes("feedback-hint")
+
+            with ui.element('div').classes("feedback-row"):
+                msg_in = ui.input(placeholder="Send feedback...").props(
+                    "dense borderless").style("flex:1;").classes(
+                    "feedback-input")
+
+                def _send():
+                    txt = (msg_in.value or "").strip()
+                    if not txt:
+                        return
+                    ok, err = feedback_db.add_feedback(txt, page="tds")
+                    if not ok:
+                        ui.notify(err or "Could not save feedback.",
+                                   type="negative")
+                        return
+                    msg_in.value = ""
+                    ui.notify("Thank you — your feedback was received.",
+                               type="positive")
+
+                msg_in.on("keydown.enter", lambda _: _send())
+                ui.button(icon="send", on_click=_send).props(
+                    "flat dense").classes("feedback-send")
 
 def build_tds_ui():
     ui.add_head_html(STYLE)
@@ -189,6 +271,11 @@ def build_tds_ui():
             _render_body(tstate, render)
 
     render()
+
+    with ui.element('div').classes("footer-wrap"):
+        _render_footer()
+
+    _render_feedback_bar()
 
 
 def _render_body(tstate, render):
