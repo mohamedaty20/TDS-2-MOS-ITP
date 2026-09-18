@@ -8,7 +8,6 @@ from fastapi import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from ui.tds_page import build_tds_ui
-import ui.usage_page  # noqa: F401 — registers /tds/usage
 from services import usage_limiter as usage_lim
 from services import usage_db as usage_db_mod
 
@@ -50,6 +49,12 @@ def tds_usage_status(key: str = ""):
                         media_type="application/json")
     return Response(content=_json.dumps(usage_lim.usage_status("tds")),
                      media_type="application/json")
+
+
+# --- Register the usage dashboard page ---
+# Imported here (not at the top) so the nicegui `ui` name above is not
+# shadowed by the local `ui` package.
+from ui import usage_page as _tds_usage_page  # noqa: E402,F401
 
 
 if __name__ in {"__main__", "__mp_main__"}:
