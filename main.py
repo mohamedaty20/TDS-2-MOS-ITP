@@ -8,18 +8,11 @@ from fastapi import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from ui.tds_page import build_tds_ui
+import ui.usage_page  # noqa: F401 — registers /tds/usage
 from services import usage_limiter as usage_lim
 from services import usage_db as usage_db_mod
 
 
-# =====================================================================
-# Admin-key cookie middleware
-# ---------------------------------------------------------------------
-# When a request comes in with ?key=XXX matching TDS_ADMIN_KEY, the
-# middleware drops an httpOnly + secure cookie so future visits from
-# the same browser skip rate limits. Unrelated requests pass through
-# untouched.
-# =====================================================================
 class TDSAdminKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -44,18 +37,12 @@ class TDSAdminKeyMiddleware(BaseHTTPMiddleware):
 app.add_middleware(TDSAdminKeyMiddleware)
 
 
-# =====================================================================
-# Pages
-# =====================================================================
 @ui.page('/')
 @ui.page('/tds')
 def tds_route():
     build_tds_ui()
 
 
-# =====================================================================
-# Usage status endpoint (admin key required)
-# =====================================================================
 @app.get('/tds/usage-status')
 def tds_usage_status(key: str = ""):
     if not usage_lim.TDS_ADMIN_KEY or key != usage_lim.TDS_ADMIN_KEY:
