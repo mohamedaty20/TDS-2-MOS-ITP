@@ -2,15 +2,67 @@
 main.py — Standalone TDS → MOS + ITP tool.
 """
 import os
-from nicegui import ui
+import json as _json
+from nicegui import ui, app
+from fastapi import Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from ui.tds_page import build_tds_ui
+from services import usage_limiter as usage_lim
+from services import usage_db as usage_db_mod
 
 
+# =====================================================================
+# Admin-key cookie middleware
+# ---------------------------------------------------------------------
+# When a request comes in with ?key=XXX matching TDS_ADMIN_KEY, the
+# middleware drops an httpOnly + secure cookie so future visits from
+# the same browser skip rate limits. Unrelated requests pass through
+# untouched.
+# =====================================================================
+class TDSAdminKeyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        try:
+            if usage_lim.TDS_ADMIN_KEY:
+                k = request.query_params.get("key", "")
+                if k and k == usage_lim.TDS_ADMIN_KEY:
+                    response.set_cookie(
+                        usage_lim.COOKIE_NAME,
+                        k,
+                        max_age=usage_lim.COOKIE_MAX_AGE,
+                        httponly=True,
+                        secure=True,
+                        samesite="lax",
+                        path="/",
+                    )
+        except Exception as e:
+            print("[tds] admin-cookie middleware err: " + repr(e))
+        return response
+
+
+app.add_middleware(TDSAdminKeyMiddleware)
+
+
+# =====================================================================
+# Pages
+# =====================================================================
 @ui.page('/')
 @ui.page('/tds')
 def tds_route():
     build_tds_ui()
+
+
+# =====================================================================
+# Usage status endpoint (admin key required)
+# =====================================================================
+@app.get('/tds/usage-status')
+def tds_usage_status(key: str = ""):
+    if not usage_lim.TDS_ADMIN_KEY or key != usage_lim.TDS_ADMIN_KEY:
+        return Response(content='{"error":"forbidden"}', status_code=403,
+                        media_type="application/json")
+    return Response(content=_json.dumps(usage_lim.usage_status("tds")),
+                     media_type="application/json")
 
 
 if __name__ in {"__main__", "__mp_main__"}:
