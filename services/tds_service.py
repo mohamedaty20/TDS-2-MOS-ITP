@@ -326,6 +326,7 @@ def _build_header_block(header):
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]))
+    t_header.hAlign = 'LEFT'
 
     return [
         t_header,
