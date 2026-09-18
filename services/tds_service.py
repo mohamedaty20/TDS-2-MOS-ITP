@@ -148,7 +148,116 @@ def _mono_names():
             getattr(svc, "_MONO_BOLD", "Courier-Bold"))
 
 
-def build_mos_pdf(product, mos, critical_params=None):
+def _header_has_content(header):
+    if not header:
+        return False
+    return bool(
+        (header.get("company_name") or "").strip()
+        or (header.get("project_name") or "").strip()
+        or (header.get("location") or "").strip()
+        or (header.get("prepared_by") or "").strip()
+        or header.get("logo_bytes")
+    )
+
+
+def _build_header_block(header, mono, mono_b):
+    """Return a list of ReportLab flowables that render the optional
+    company header at the top of page 1. Returns [] when header is
+    empty or missing."""
+    if not _header_has_content(header):
+        return []
+    from reportlab.platypus import (Table, TableStyle, Spacer, HRFlowable,
+                                     Image as ReportLabImage, Paragraph)
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    import io as _io
+
+    NAVY = colors.HexColor("#0a0a0a")
+    ACCENT = colors.HexColor("#14b8a6")
+    GREY = colors.HexColor("#525252")
+
+    company_style = ParagraphStyle("HdrCompany", fontName=mono_b,
+                                    fontSize=13, textColor=NAVY,
+                                    leading=16, spaceAfter=2)
+    label_style = ParagraphStyle("HdrLabel", fontName=mono_b,
+                                  fontSize=8, textColor=ACCENT,
+                                  leading=11)
+    value_style = ParagraphStyle("HdrValue", fontName=mono,
+                                  fontSize=9.5, textColor=colors.black,
+                                  leading=12)
+
+    company_name = (header.get("company_name") or "").strip()
+    project_name = (header.get("project_name") or "").strip()
+    location = (header.get("location") or "").strip()
+    prepared_by = (header.get("prepared_by") or "").strip()
+    date_str = (header.get("date") or "").strip()
+    logo_bytes = header.get("logo_bytes")
+
+    logo_cell = ""
+    if logo_bytes:
+        try:
+            logo_cell = ReportLabImage(_io.BytesIO(logo_bytes),
+                                        width=26 * mm, height=14 * mm)
+        except Exception:
+            logo_cell = ""
+
+    right_flowables = []
+    if company_name:
+        right_flowables.append(Paragraph(_esc(company_name), company_style))
+
+    detail_rows = []
+    if project_name:
+        detail_rows.append([
+            Paragraph("PROJECT", label_style),
+            Paragraph(_esc(project_name), value_style)])
+    if location:
+        detail_rows.append([
+            Paragraph("LOCATION", label_style),
+            Paragraph(_esc(location), value_style)])
+    if prepared_by:
+        detail_rows.append([
+            Paragraph("PREPARED BY", label_style),
+            Paragraph(_esc(prepared_by), value_style)])
+    if date_str:
+        detail_rows.append([
+            Paragraph("DATE", label_style),
+            Paragraph(_esc(date_str), value_style)])
+
+    if detail_rows:
+        t_details = Table(detail_rows, colWidths=[26 * mm, 118 * mm])
+        t_details.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        right_flowables.append(Spacer(1, 3))
+        right_flowables.append(t_details)
+
+    if logo_cell:
+        t_header = Table([[logo_cell, right_flowables]],
+                          colWidths=[30 * mm, 150 * mm])
+    else:
+        t_header = Table([[right_flowables]], colWidths=[180 * mm])
+
+    t_header.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+
+    return [
+        t_header,
+        Spacer(1, 6),
+        HRFlowable(width="100%", thickness=0.8, color=ACCENT,
+                    spaceAfter=10),
+    ]
+
+
+def build_mos_pdf(product, mos, critical_params=None, header=None):
     _ensure()
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
                                      Table, TableStyle, HRFlowable)
@@ -184,6 +293,7 @@ def build_mos_pdf(product, mos, critical_params=None):
                             topMargin=18 * mm, bottomMargin=18 * mm)
 
     story = []
+    story.extend(_build_header_block(header, mono, mono_b))
     story.append(Paragraph(_esc(mos.get("title") or
                                  "METHOD STATEMENT"), title_style))
     p = product or {}
@@ -288,7 +398,7 @@ def build_mos_pdf(product, mos, critical_params=None):
     return buf.read()
 
 
-def build_itp_pdf(product, itp):
+def build_itp_pdf(product, itp, header=None):
     _ensure()
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
                                      Table, TableStyle, HRFlowable)
@@ -319,6 +429,7 @@ def build_itp_pdf(product, itp):
                             topMargin=14 * mm, bottomMargin=14 * mm)
 
     story = []
+    story.extend(_build_header_block(header, mono, mono_b))
     story.append(Paragraph(_esc(itp.get("title") or
                                  "INSPECTION & TEST PLAN"), title_style))
     p = product or {}
