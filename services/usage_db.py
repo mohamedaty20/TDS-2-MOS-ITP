@@ -162,3 +162,149 @@ def count_global_today(tool="tds"):
                 c.close()
             except Exception:
                 pass
+
+
+# =====================================================================
+# NEW — read-only helpers for the usage dashboard
+# =====================================================================
+def count_success_fail_today(tool="tds"):
+    """Return (success_count, fail_count) for the current UTC day."""
+    start, end = _day_bounds_utc()
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        s = f = 0
+        try:
+            cur.execute("""
+                SELECT COALESCE(SUM(success),0),
+                       COUNT(*) - COALESCE(SUM(success),0)
+                FROM usage WHERE tool=? AND created_at>=? AND created_at<?
+            """, (tool or "tds", start, end))
+            row = cur.fetchone()
+            if row:
+                if isinstance(row, dict):
+                    vals = list(row.values())
+                    s, f = int(vals[0] or 0), int(vals[1] or 0)
+                else:
+                    s, f = int(row[0] or 0), int(row[1] or 0)
+        except Exception as e:
+            print("[usage_db] count_success_fail failed: " + repr(e))
+        finally:
+            try:
+                c.close()
+            except Exception:
+                pass
+    return s, f
+
+
+def distinct_ips_today(tool="tds"):
+    start, end = _day_bounds_utc()
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            cur.execute("""
+                SELECT COUNT(DISTINCT ip_hash) FROM usage
+                WHERE tool=? AND created_at>=? AND created_at<?
+            """, (tool or "tds", start, end))
+            row = cur.fetchone()
+            v = row[0] if row else 0
+            if isinstance(v, dict):
+                v = list(v.values())[0]
+            return int(v or 0)
+        except Exception:
+            return 0
+        finally:
+            try:
+                c.close()
+            except Exception:
+                pass
+
+
+def daily_totals(days=7, tool="tds"):
+    """Return [{date, label, total, success, fail}, ...] for the last
+    N days, oldest first. Includes today."""
+    now = datetime.datetime.utcnow()
+    out = []
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            for i in range(days - 1, -1, -1):
+                d = now - datetime.timedelta(days=i)
+                start = d.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = start + datetime.timedelta(days=1)
+                cur.execute("""
+                    SELECT COUNT(*), COALESCE(SUM(success),0)
+                    FROM usage WHERE tool=? AND created_at>=? AND created_at<?
+                """, (tool or "tds",
+                      start.strftime("%Y-%m-%d %H:%M:%S"),
+                      end.strftime("%Y-%m-%d %H:%M:%S")))
+                row = cur.fetchone()
+                total = ok = 0
+                if row:
+                    if isinstance(row, dict):
+                        vals = list(row.values())
+                        total, ok = int(vals[0] or 0), int(vals[1] or 0)
+                    else:
+                        total, ok = int(row[0] or 0), int(row[1] or 0)
+                out.append({
+                    "date": start.strftime("%Y-%m-%d"),
+                    "label": start.strftime("%d %b"),
+                    "total": total,
+                    "success": ok,
+                    "fail": max(0, total - ok),
+                })
+        except Exception as e:
+            print("[usage_db] daily_totals failed: " + repr(e))
+        finally:
+            try:
+                c.close()
+            except Exception:
+                pass
+    return out
+
+
+def list_recent_usage(limit=200, ip_hash=None):
+    """Return the most recent rows, newest first. If ip_hash is given,
+    filter to that exact hash."""
+    with _LOCK:
+        c = _conn()
+        cur = c.cursor()
+        try:
+            if ip_hash:
+                cur.execute("""
+                    SELECT id, created_at, ip_hash, tool,
+                           source_filename, success
+                    FROM usage WHERE ip_hash=?
+                    ORDER BY id DESC LIMIT ?
+                """, (ip_hash, int(limit)))
+            else:
+                cur.execute("""
+                    SELECT id, created_at, ip_hash, tool,
+                           source_filename, success
+                    FROM usage ORDER BY id DESC LIMIT ?
+                """, (int(limit),))
+            rows = cur.fetchall()
+        except Exception as e:
+            print("[usage_db] list_recent failed: " + repr(e))
+            rows = []
+        finally:
+            try:
+                c.close()
+            except Exception:
+                pass
+    out = []
+    for r in rows:
+        if isinstance(r, dict):
+            out.append(r)
+            continue
+        try:
+            out.append({
+                "id": r[0], "created_at": r[1], "ip_hash": r[2],
+                "tool": r[3], "source_filename": r[4],
+                "success": bool(r[5]),
+            })
+        except Exception:
+            pass
+    return out
