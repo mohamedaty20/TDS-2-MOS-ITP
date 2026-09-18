@@ -1,76 +1,180 @@
 """
-ui/tds_page.py — Standalone TDS → MOS + ITP generator.
-
-Extracts ONLY the TDS feature from ui/defect_page.py into a dedicated
-route /tds. Reuses:
-  - services.tds_service.generate_mos_itp        (AI generation)
-  - services.tds_service.build_mos_pdf           (PDF export)
-  - services.tds_service.build_itp_pdf           (PDF export)
-  - services.ai_service.call_gemini_json         (Gemini client)
-  - services.defect_service.extract_document_text (document text)
-  - ui.defect_page._ocr_handwriting              (image OCR)
+ui/tds_page.py — Standalone TDS → MOS + ITP page.
 """
 import asyncio
 import datetime
 import html as _html_mod
-from nicegui import ui, app
+from nicegui import ui
 
-from services import defect_db as db
 from services import defect_service as svc
 from services import tds_service as tds
 from services.ai_service import call_gemini_json
-from ui.pwa import inject_pwa
-from ui.defect_page import (
-    _inject_theme, _ocr_handwriting,
-    BTN_PRIMARY, BTN_SOFT, BTN_DANGER, BTN_OUTLINE, BTN_SUCCESS,
+
+
+STYLE = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  html, body {
+    background: #0b0b0b !important; color: #e8e8e8 !important;
+    font-family: 'JetBrains Mono','Amiri','Courier New',monospace !important;
+    font-size: 13px; -webkit-font-smoothing: antialiased;
+  }
+  .nicegui-content { padding: 0 !important; }
+  .q-page, .q-layout { background: #0b0b0b !important; }
+  .q-btn {
+    border-radius: 3px !important; text-transform: none !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-weight: 500 !important; min-height: 32px !important;
+    padding: 0 12px !important; font-size: 11px !important;
+    box-shadow: none !important;
+  }
+  .btn-primary { background: #5eead4 !important;
+                 color: #0b0b0b !important; font-weight: 700 !important; }
+  .btn-soft { background: #161616 !important; color: #e8e8e8 !important;
+              border: 1px solid #262626 !important; }
+  .q-field--outlined .q-field__control {
+    border-radius: 3px !important; background: #161616 !important;
+  }
+  .q-field--outlined .q-field__control:before { border-color: #262626 !important; }
+  .q-field--outlined.q-field--focused .q-field__control:after {
+    border-color: #5eead4 !important;
+  }
+  .q-field__label, .q-field__native, .q-field__input {
+    color: #e8e8e8 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 12px !important;
+  }
+  .card { background: #101010; border: 1px solid #1e1e1e;
+          border-radius: 4px; padding: 16px; width: 100%;
+          box-sizing: border-box; }
+  .main-content { padding: 14px; padding-bottom: 40px;
+                  max-width: 760px; margin: 0 auto; width: 100%;
+                  box-sizing: border-box; }
+  .section-head { display: flex; justify-content: space-between;
+                  align-items: center; margin-bottom: 10px;
+                  padding-bottom: 6px; border-bottom: 1px solid #1e1e1e; }
+  .h1 { font-size: 16px; font-weight: 700; color: #e8e8e8;
+        letter-spacing: -0.02em; }
+  .muted { color: #808080; font-size: 11px; }
+  .mono-sm { font-size: 10px; color: #808080; }
+  .label { font-size: 9px; font-weight: 700; color: #5a5a5a;
+           text-transform: uppercase; letter-spacing: 0.14em; }
+  .app-header {
+    background: rgba(11,11,11,0.94); border-bottom: 1px solid #1e1e1e;
+    padding: 10px 14px; display: flex; align-items: center;
+    justify-content: space-between; box-sizing: border-box; width: 100%;
+  }
+  .app-header .brand { font-weight: 700; font-size: 12px; color: #e8e8e8; }
+  .app-header .brand::before {
+    content: '\\25CF '; color: #5eead4; font-size: 9px;
+    vertical-align: middle; margin-right: 4px;
+  }
+  .q-uploader { background: #161616 !important;
+                border: 1px dashed #262626 !important;
+                border-radius: 4px !important; width: 100% !important;
+                color: #e8e8e8 !important; }
+  .q-uploader__header { background: transparent !important;
+                        color: #e8e8e8 !important; }
+  .q-notification {
+    border-radius: 3px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px !important; background: #161616 !important;
+    color: #e8e8e8 !important;
+    border: 1px solid #262626 !important;
+  }
+</style>
+"""
+
+
+_OCR_PROMPT = (
+    "You are a precise OCR engine for handwritten and printed documents. "
+    "Read every character in this document exactly as it appears."
+    "\n\nCRITICAL RULES:"
+    "\n1. Detect the language automatically (Arabic, English, or mixed)."
+    "\n2. If the text is Arabic, transcribe it in correct right-to-left "
+    "reading order, word by word, preserving every letter."
+    "\n3. Do NOT translate. Do NOT summarize. Do NOT add commentary."
+    "\n4. Preserve line breaks exactly as they appear on the page."
+    "\n5. Return ONLY the raw extracted text. No quotes, no labels."
+    "\n6. If the image contains no readable text, return an empty string."
 )
 
 
-def build_tds_ui(user_id):
-    _inject_theme()
-    inject_pwa()
+def _preprocess_for_ocr(file_bytes, mime_type):
+    mime = (mime_type or "image/jpeg").lower()
+    if mime == "application/pdf" or not mime.startswith("image/"):
+        return file_bytes, mime
+    try:
+        from PIL import Image, ImageOps, ImageFilter
+        import io as _io
+        img = Image.open(_io.BytesIO(file_bytes))
+        img = ImageOps.exif_transpose(img)
+        if img.mode not in ("L", "RGB"):
+            img = img.convert("RGB")
+        w, h = img.size
+        longest = max(w, h)
+        if longest < 1400:
+            scale = 1400.0 / float(longest)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        elif longest > 2400:
+            scale = 2400.0 / float(longest)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        img = img.filter(ImageFilter.UnsharpMask(radius=1.4, percent=140,
+                                                  threshold=3))
+        buf = _io.BytesIO()
+        img.save(buf, format="JPEG", quality=92, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    except Exception as e:
+        print("[ocr] preprocess failed: " + repr(e))
+        return file_bytes, mime
 
-    user = db.get_user(user_id)
-    tstate = {
-        "result": None,
-        "running": False,
-        "error": None,
-        "filename": "",
-    }
 
-    # ---- Top bar ----
-    with ui.element('div').classes("app-topbar"):
-        with ui.element('div').classes("app-header"):
-            with ui.element('div').style(
-                "display:flex;align-items:center;gap:10px;"
-            ):
-                ui.label("TDS → MOS & ITP").classes("brand")
-            with ui.element('div').style(
-                "display:flex;align-items:center;gap:6px;"
-            ):
-                if user and user.get("name"):
-                    ui.label(str(user["name"])).style(
-                        "font-size:11px;color:#808080;"
-                        "max-width:180px;overflow:hidden;"
-                        "text-overflow:ellipsis;white-space:nowrap;")
-                ui.button("Back to app",
-                          on_click=lambda: ui.navigate.to("/app")).props(
-                    "flat dense no-caps size=sm").style(
-                    "color:#e8e8e8;font-weight:600;font-size:10px;"
-                    "border:1px solid #262626;border-radius:2px;"
-                    "padding:0 8px;min-height:26px;")
+async def _ocr_handwriting(file_bytes, mime_type):
+    if not file_bytes:
+        return None, "Empty file."
+    try:
+        from google.genai import types
+    except Exception as e:
+        return None, "google-genai not available: " + repr(e)
+    payload, mime = _preprocess_for_ocr(file_bytes, mime_type)
+    try:
+        part = types.Part.from_bytes(data=payload, mime_type=mime)
+    except Exception as e:
+        return None, "Could not prepare file: " + repr(e)
+    try:
+        raw = await call_gemini_json([_OCR_PROMPT, part],
+                                       temperature=0.0, timeout=45)
+    except Exception as e:
+        return None, "AI call failed: " + str(e)
+    text = (raw or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'", "`"):
+        text = text[1:-1].strip()
+    if not text:
+        return "", "No readable text found."
+    return text, None
+
+
+def build_tds_ui():
+    ui.add_head_html(STYLE)
+
+    tstate = {"result": None, "running": False, "error": None, "filename": ""}
+
+    with ui.element('div').classes("app-header"):
+        ui.label("TDS → MOS & ITP").classes("brand")
 
     content = ui.element('div').classes("main-content")
 
     def render():
         content.clear()
         with content:
-            _render_tds(tstate, render)
+            _render_body(tstate, render)
 
     render()
 
 
-def _render_tds(tstate, render):
+def _render_body(tstate, render):
     with ui.element('div').classes("section-head"):
         ui.label("TDS → MOS & ITP").classes("h1")
 
@@ -87,7 +191,6 @@ def _render_tds(tstate, render):
         "drafts a Method Statement + an Inspection & Test Plan."
     ).classes("muted").style("margin-bottom:12px;line-height:1.6;")
 
-    # ---- Upload card ----
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         upload_status = ui.label("").classes("mono-sm").style(
             "margin-top:6px;display:block;min-height:16px;")
@@ -150,8 +253,7 @@ def _render_tds(tstate, render):
 
             tstate["running"] = True
             try:
-                result = await tds.generate_mos_itp(text,
-                                                     call_gemini_json)
+                result = await tds.generate_mos_itp(text, call_gemini_json)
             except Exception as ex:
                 import traceback
                 traceback.print_exc()
@@ -170,7 +272,6 @@ def _render_tds(tstate, render):
             "label='Upload TDS (PDF / DOCX / TXT / Image)'")
         upload_status
 
-    # ---- Error ----
     if tstate.get("error"):
         with ui.element('div').classes("card").style(
             "border-left:3px solid #f87171;margin-bottom:12px;"
@@ -188,52 +289,24 @@ def _render_tds(tstate, render):
     if not result:
         return
 
-    # ---- Results ----
     product = result.get("product") or {}
     mos = result.get("method_statement") or {}
     itp = result.get("inspection_test_plan") or {}
     crit = result.get("critical_parameters") or []
 
-    # Download buttons
     with ui.element('div').style(
         "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
         "margin-bottom:12px;"
     ):
         def _mos_txt():
             try:
-                lines = []
-                lines.append(mos.get("title") or "METHOD STATEMENT")
-                lines.append("=" * 60)
-                p_bits = []
+                lines = [mos.get("title") or "METHOD STATEMENT", "=" * 60]
                 if product.get("name"):
-                    p_bits.append("Product: " + str(product["name"]))
+                    lines.append("Product: " + str(product["name"]))
                 if product.get("manufacturer"):
-                    p_bits.append("Manufacturer: " +
-                                  str(product["manufacturer"]))
-                if product.get("tds_reference"):
-                    p_bits.append("TDS ref: " +
-                                  str(product["tds_reference"]))
-                if product.get("category"):
-                    p_bits.append("Category: " +
-                                  str(product["category"]))
-                lines.extend(p_bits)
-                lines.append("Date: " +
-                             datetime.date.today().strftime("%Y-%m-%d"))
+                    lines.append("Manufacturer: " + str(product["manufacturer"]))
+                lines.append("Date: " + datetime.date.today().strftime("%Y-%m-%d"))
                 lines.append("")
-                if product.get("description"):
-                    lines.append(str(product["description"]))
-                    lines.append("")
-                if crit:
-                    lines.append("KEY PARAMETERS FROM TDS")
-                    lines.append("-" * 60)
-                    for cp in crit:
-                        lines.append(
-                            str(cp.get("parameter") or "") + " : " +
-                            str(cp.get("value") or "")
-                            + ("  (" + str(cp["source_note"]) + ")"
-                               if cp.get("source_note") else "")
-                        )
-                    lines.append("")
                 for sec in (mos.get("sections") or []):
                     num = str(sec.get("number") or "").strip()
                     head = str(sec.get("heading") or "").strip()
@@ -246,66 +319,22 @@ def _render_tds(tstate, render):
                     if body:
                         lines.append(body)
                     lines.append("")
-                lines.append("")
-                lines.append("PREPARED BY (QC): ____________________")
-                lines.append("APPROVED BY (CONSULTANT): ____________________")
-                lines.append("")
-                txt = "\n".join(lines).encode("utf-8")
-                ui.download(txt, filename="method_statement.txt")
+                ui.download("\n".join(lines).encode("utf-8"),
+                              filename="method_statement.txt")
             except Exception as ex:
-                import traceback
-                traceback.print_exc()
                 ui.notify("TXT failed: " + str(ex), type="negative")
 
         def _itp_txt():
             try:
-                lines = []
-                lines.append(itp.get("title") or
-                             "INSPECTION & TEST PLAN")
-                lines.append("=" * 100)
-                p_bits = []
-                if product.get("name"):
-                    p_bits.append("Product: " + str(product["name"]))
-                if product.get("manufacturer"):
-                    p_bits.append("Manufacturer: " +
-                                  str(product["manufacturer"]))
-                lines.extend(p_bits)
-                lines.append("Date: " +
-                             datetime.date.today().strftime("%Y-%m-%d"))
-                lines.append("")
-                headers = ["#", "Activity", "Reference", "Checkpoint",
-                           "Acceptance criteria", "Method",
-                           "Frequency", "Responsible"]
-                widths = [3, 22, 16, 26, 34, 20, 12, 14]
-                def _row(cells):
-                    out = []
-                    for i, c in enumerate(cells):
-                        c = str(c or "").replace("\n", " ")
-                        w = widths[i]
-                        if i == 0:
-                            out.append(c.rjust(w))
-                        else:
-                            out.append(c[:w].ljust(w))
-                    return " | ".join(out)
-                lines.append(_row(headers))
-                lines.append("-+-".join("-" * w for w in widths))
+                lines = [itp.get("title") or "INSPECTION & TEST PLAN"]
                 for i, r in enumerate(itp.get("rows") or [], start=1):
-                    lines.append(_row([
-                        str(i),
-                        r.get("activity") or "",
-                        r.get("reference") or "",
-                        r.get("checkpoint") or "",
-                        r.get("acceptance_criteria") or "",
-                        r.get("method") or "",
-                        r.get("frequency") or "",
-                        r.get("responsible") or "",
-                    ]))
-                lines.append("")
-                txt = "\n".join(lines).encode("utf-8")
-                ui.download(txt, filename="inspection_test_plan.txt")
+                    lines.append(
+                        str(i) + ". " + str(r.get("activity") or "") +
+                        " | " + str(r.get("acceptance_criteria") or "")
+                    )
+                ui.download("\n".join(lines).encode("utf-8"),
+                              filename="inspection_test_plan.txt")
             except Exception as ex:
-                import traceback
-                traceback.print_exc()
                 ui.notify("TXT failed: " + str(ex), type="negative")
 
         def _dl_mos():
@@ -327,19 +356,18 @@ def _render_tds(tstate, render):
                 ui.notify("PDF failed: " + str(ex), type="negative")
 
         ui.button("Method Statement — TXT", icon="description",
-                  on_click=_mos_txt).classes(BTN_SOFT).style(
+                  on_click=_mos_txt).classes("btn-soft").style(
             "width:100%;font-size:10px;")
         ui.button("ITP — TXT", icon="description",
-                  on_click=_itp_txt).classes(BTN_SOFT).style(
+                  on_click=_itp_txt).classes("btn-soft").style(
             "width:100%;font-size:10px;")
         ui.button("Method Statement — PDF", icon="picture_as_pdf",
-                  on_click=_dl_mos).classes(BTN_PRIMARY).style(
+                  on_click=_dl_mos).classes("btn-primary").style(
             "width:100%;font-size:10px;")
         ui.button("ITP — PDF", icon="picture_as_pdf",
-                  on_click=_dl_itp).classes(BTN_PRIMARY).style(
+                  on_click=_dl_itp).classes("btn-primary").style(
             "width:100%;font-size:10px;")
 
-    # Product card
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.label("PRODUCT").classes("label")
         ui.label(str(product.get("name") or "Not specified")).style(
@@ -355,14 +383,12 @@ def _render_tds(tstate, render):
             ui.label(" · ".join(bits)).classes("mono-sm").style(
                 "margin-top:4px;color:#b8b8b8;")
 
-    # MOS preview
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.html(
-            '<div style="font-size:15px;font-weight:700;'
-            'color:#5eead4;border-bottom:1px solid rgba(94,234,212,0.3);'
-            'padding-bottom:8px;margin-bottom:12px;'
-            'letter-spacing:-0.01em;">' +
-            _html_mod.escape(mos.get("title") or "METHOD STATEMENT") +
+            '<div style="font-size:15px;font-weight:700;color:#5eead4;'
+            'border-bottom:1px solid rgba(94,234,212,0.3);'
+            'padding-bottom:8px;margin-bottom:12px;letter-spacing:-0.01em;">'
+            + _html_mod.escape(mos.get("title") or "METHOD STATEMENT") +
             '</div>'
         )
         for sec in (mos.get("sections") or []):
@@ -372,28 +398,25 @@ def _render_tds(tstate, render):
             if not head_line:
                 continue
             ui.html(
-                '<div style="font-size:12px;font-weight:700;'
-                'color:#5eead4;margin-top:14px;margin-bottom:4px;'
-                'letter-spacing:0.02em;">' +
-                _html_mod.escape(head_line) + '</div>'
+                '<div style="font-size:12px;font-weight:700;color:#5eead4;'
+                'margin-top:14px;margin-bottom:4px;letter-spacing:0.02em;">'
+                + _html_mod.escape(head_line) + '</div>'
             )
             body = str(sec.get("body") or "").strip()
             if body:
                 ui.html(
                     '<pre style="margin:0 0 4px 0;white-space:pre-wrap;'
                     'word-break:break-word;font-family:inherit;'
-                    'font-size:12px;line-height:1.7;color:#d0d0d0;">' +
-                    _html_mod.escape(body) + '</pre>'
+                    'font-size:12px;line-height:1.7;color:#d0d0d0;">'
+                    + _html_mod.escape(body) + '</pre>'
                 )
 
-    # ITP preview
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.html(
-            '<div style="font-size:15px;font-weight:700;'
-            'color:#5eead4;border-bottom:1px solid rgba(94,234,212,0.3);'
-            'padding-bottom:8px;margin-bottom:12px;'
-            'letter-spacing:-0.01em;">' +
-            _html_mod.escape(itp.get("title") or "INSPECTION & TEST PLAN") +
+            '<div style="font-size:15px;font-weight:700;color:#5eead4;'
+            'border-bottom:1px solid rgba(94,234,212,0.3);'
+            'padding-bottom:8px;margin-bottom:12px;letter-spacing:-0.01em;">'
+            + _html_mod.escape(itp.get("title") or "INSPECTION & TEST PLAN") +
             '</div>'
         )
         rows = itp.get("rows") or []
@@ -401,36 +424,30 @@ def _render_tds(tstate, render):
             ui.label("No ITP rows generated.").classes("muted")
         else:
             html = ('<table style="width:100%;border-collapse:collapse;'
-                    'font-size:10.5px;'
-                    'font-variant-numeric:tabular-nums;">'
+                    'font-size:10.5px;">'
                     '<thead><tr style="background:#0a0a0a;">')
-            heads = ["#", "Activity", "Reference", "Checkpoint",
-                     "Acceptance criteria", "Method", "Freq.", "Resp."]
-            for h in heads:
-                html += ('<th style="text-align:left;padding:6px 6px;'
-                         'font-size:9px;letter-spacing:0.12em;'
-                         'color:#5eead4;text-transform:uppercase;'
-                         'border-bottom:1px solid #1e1e1e;">' +
-                         _html_mod.escape(h) + '</th>')
+            for h in ["#", "Activity", "Reference", "Checkpoint",
+                      "Acceptance criteria", "Method", "Freq.", "Resp."]:
+                html += ('<th style="text-align:left;padding:6px;'
+                         'font-size:9px;letter-spacing:0.12em;color:#5eead4;'
+                         'text-transform:uppercase;'
+                         'border-bottom:1px solid #1e1e1e;">'
+                         + _html_mod.escape(h) + '</th>')
             html += '</tr></thead><tbody>'
             for i, r in enumerate(rows, start=1):
                 html += '<tr style="border-bottom:1px solid #1e1e1e;">'
-                cells = [
-                    str(i),
-                    str(r.get("activity") or ""),
-                    str(r.get("reference") or ""),
-                    str(r.get("checkpoint") or ""),
+                for j, c in enumerate([
+                    str(i), str(r.get("activity") or ""),
+                    str(r.get("reference") or ""), str(r.get("checkpoint") or ""),
                     str(r.get("acceptance_criteria") or ""),
-                    str(r.get("method") or ""),
-                    str(r.get("frequency") or ""),
+                    str(r.get("method") or ""), str(r.get("frequency") or ""),
                     str(r.get("responsible") or ""),
-                ]
-                for j, c in enumerate(cells):
+                ]):
                     col = "#e8e8e8" if j == 0 else "#d0d0d0"
-                    html += ('<td style="padding:6px 6px;'
-                             'vertical-align:top;color:' + col + ';'
-                             'font-size:10.5px;line-height:1.45;">' +
-                             _html_mod.escape(c) + '</td>')
+                    html += ('<td style="padding:6px;vertical-align:top;'
+                             'color:' + col + ';font-size:10.5px;'
+                             'line-height:1.45;">'
+                             + _html_mod.escape(c) + '</td>')
                 html += '</tr>'
             html += '</tbody></table>'
             ui.html(html)
