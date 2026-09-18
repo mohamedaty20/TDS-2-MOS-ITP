@@ -9,7 +9,32 @@ from nicegui import ui, app
 from services import defect_service as svc
 from services import tds_service as tds
 from services import tds_documents_db as tddb
+from services import usage_limiter
 from services.ai_service import call_gemini_json
+
+
+def _get_request_and_client():
+    """Return (request_or_None, ip_str, admin_bypass_bool)."""
+    req = None
+    try:
+        from nicegui import context as _ctx
+        cli = getattr(_ctx, "client", None)
+        if cli is not None:
+            req = getattr(cli, "request", None)
+    except Exception:
+        req = None
+    ip = usage_limiter.get_client_ip(req)
+    if ip == "unknown":
+        try:
+            from nicegui import context as _ctx
+            cli = getattr(_ctx, "client", None)
+            cip = getattr(cli, "ip", None)
+            if cip:
+                ip = str(cip)
+        except Exception:
+            pass
+    bypass = usage_limiter.is_admin_bypass(req)
+    return req, ip, bypass
 
 
 STYLE = """
@@ -779,6 +804,19 @@ def _render_body(tstate, render):
                 render()
                 return
 
+            # ----- Rate limit check -----
+            _req, _ip, _bypass = _get_request_and_client()
+            if not _bypass:
+                _allowed, _msg = usage_limiter.check_limit(_ip, tool="tds")
+                if not _allowed:
+                    tstate["error"] = _msg
+                    upload_status.set_text("Limit reached.")
+                    upload_status.style(
+                        "margin-top:6px;display:block;min-height:16px;"
+                        "color:#f87171;font-size:10px;")
+                    render()
+                    return
+
             upload_status.set_text(
                 "Extracted " + str(len(text)) + " chars. "
                 "Calling AI to draft MOS + ITP… (up to 2 min)")
@@ -791,6 +829,13 @@ def _render_body(tstate, render):
                 traceback.print_exc()
                 result = {"error": "AI failed: " + repr(ex)}
             tstate["running"] = False
+
+            if not _bypass:
+                try:
+                    usage_limiter.record(_ip, "tds", fname,
+                                          success=not result.get("error"))
+                except Exception as _e:
+                    print("[tds] record usage failed: " + repr(_e))
 
             if result.get("error"):
                 tstate["error"] = result["error"]
@@ -811,6 +856,16 @@ def _render_body(tstate, render):
             tstate["result"] = None
             tstate["error"] = None
             tstate["filename"] = "EXAMPLE — MasterSeal 6100 TDS"
+
+            # ----- Rate limit check -----
+            _req, _ip, _bypass = _get_request_and_client()
+            if not _bypass:
+                _allowed, _msg = usage_limiter.check_limit(_ip, tool="tds")
+                if not _allowed:
+                    tstate["error"] = _msg
+                    render()
+                    return
+
             upload_status.set_text(
                 "Loading example TDS. Calling AI to draft MOS + ITP… "
                 "(45–90 seconds)")
@@ -826,6 +881,14 @@ def _render_body(tstate, render):
                 traceback.print_exc()
                 result = {"error": "AI failed: " + repr(ex)}
             tstate["running"] = False
+
+            if not _bypass:
+                try:
+                    usage_limiter.record(_ip, "tds", "example",
+                                          success=not result.get("error"))
+                except Exception as _e:
+                    print("[tds] record usage failed: " + repr(_e))
+
             if result.get("error"):
                 tstate["error"] = result["error"]
             else:
