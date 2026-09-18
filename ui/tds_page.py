@@ -217,18 +217,21 @@ def _render_body(tstate, render):
                 ui.notify("Already processing…", type="warning")
                 return
             try:
-                data = await e.file.read()
+                data = e.content.read()
+                if hasattr(data, "__await__"):
+                    data = await data
             except Exception as ex:
                 ui.notify("Read failed: " + str(ex), type="negative")
                 return
 
-            name = (e.file.name or "").lower()
-            tstate["filename"] = e.file.name or ""
+            fname = getattr(e, "name", "") or ""
+            name = fname.lower()
+            tstate["filename"] = fname
             tstate["result"] = None
             tstate["error"] = None
 
             upload_status.set_text("Extracting text from " +
-                                    (e.file.name or "file") + "…")
+                                    (fname or "file") + "…")
             upload_status.style(
                 "margin-top:6px;display:block;min-height:16px;"
                 "color:#fbbf24;font-size:10px;")
@@ -237,7 +240,7 @@ def _render_body(tstate, render):
             try:
                 if name.endswith((".pdf", ".docx", ".txt", ".md")):
                     text = await asyncio.to_thread(
-                        svc.extract_document_text, data, e.file.name)
+                        svc.extract_document_text, data, fname)
                 elif name.endswith((".jpg", ".jpeg", ".png")):
                     mime = ("image/jpeg"
                             if name.endswith((".jpg", ".jpeg"))
@@ -247,7 +250,7 @@ def _render_body(tstate, render):
                         text = ""
                 else:
                     text = await asyncio.to_thread(
-                        svc.extract_document_text, data, e.file.name)
+                        svc.extract_document_text, data, fname)
             except Exception as ex:
                 print("[tds] extract failed: " + repr(ex))
                 text = ""
