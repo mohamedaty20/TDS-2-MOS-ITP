@@ -11,8 +11,6 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 
-# 45-second timeout in milliseconds.
-# The SDK has NO default timeout — without this, calls hang forever.
 _HTTP_OPTIONS = types.HttpOptions(timeout=45000)
 
 client = genai.Client(
