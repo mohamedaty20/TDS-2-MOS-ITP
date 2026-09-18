@@ -96,10 +96,39 @@ STYLE = """
                 padding: 6px; margin-top: 6px;
                 background: #161616; }
 
+  .flow-wrap { display: flex; align-items: stretch;
+               justify-content: center; gap: 10px;
+               margin: 6px 0 4px; flex-wrap: wrap; }
+  .flow-box { background: #101010; border: 1px solid #262626;
+              border-radius: 4px; padding: 12px 14px;
+              min-width: 150px; flex: 1;
+              text-align: center;
+              font-family: 'JetBrains Mono', monospace; }
+  .flow-num { font-size: 9px; font-weight: 700; color: #5eead4;
+              letter-spacing: 0.14em; margin-bottom: 6px;
+              text-transform: uppercase; }
+  .flow-title { font-size: 12px; font-weight: 700; color: #e8e8e8;
+                margin-bottom: 4px; }
+  .flow-sub { font-size: 10px; color: #808080; line-height: 1.5; }
+  .flow-arrow { color: #5eead4; font-size: 16px; font-weight: 700;
+                align-self: center;
+                font-family: 'JetBrains Mono', monospace; }
+  .flow-time { text-align: center; font-size: 10px; color: #5a5a5a;
+               margin: 10px 0 18px;
+               font-family: 'JetBrains Mono', monospace; }
+  .example-btn { color: #5eead4 !important; font-size: 11px !important;
+                 font-weight: 600 !important;
+                 font-family: 'JetBrains Mono', monospace !important;
+                 padding: 0 !important; margin-top: 10px !important;
+                 min-height: 20px !important;
+                 background: transparent !important;
+                 text-transform: none !important; }
+  .example-btn:hover { text-decoration: underline; }
+
   .page-shell { display: flex; flex-direction: column;
                 min-height: 100vh; width: 100%; }
   .page-main { flex: 1 1 auto; width: 100%; }
-  .footer-wrap { width: 100%; padding: 40px 14px 140px;
+  .footer-wrap { width: 100%; padding: 40px 14px 200px;
                  box-sizing: border-box; text-align: center; }
   .footer-line { font-size: 10px; color: #4a4a4a;
                  text-align: center; line-height: 1.9;
@@ -121,14 +150,17 @@ STYLE = """
   .feedback-hint { font-size: 10px; color: #5a5a5a;
                    margin-bottom: 6px; display: block;
                    font-family: 'JetBrains Mono', monospace; }
-  .feedback-row { display: flex; gap: 8px; align-items: center;
+  .feedback-row { display: flex; gap: 8px; align-items: flex-end;
                   background: #161616; border: 1px solid #262626;
-                  border-radius: 22px; padding: 4px 4px 4px 14px;
+                  border-radius: 0; padding: 10px 10px 10px 14px;
+                  min-height: 96px;
                   transition: border-color 0.15s; }
   .feedback-row:focus-within { border-color: #5eead4; }
+  .feedback-input { flex: 1; }
   .feedback-input .q-field__control {
     background: transparent !important; border: none !important;
-    min-height: 32px !important;
+    min-height: 70px !important;
+    align-items: flex-start !important;
   }
   .feedback-input .q-field__control:before,
   .feedback-input .q-field__control:after {
@@ -142,12 +174,83 @@ STYLE = """
   }
   .feedback-send { background: #5eead4 !important;
                    color: #0b0b0b !important;
-                   border-radius: 50% !important;
+                   border-radius: 3px !important;
                    min-width: 34px !important;
                    min-height: 34px !important;
                    padding: 0 !important; }
   .feedback-send .q-icon { font-size: 16px !important; }
 </style>
+"""
+
+
+_EXAMPLE_TDS_TEXT = """
+TECHNICAL DATA SHEET
+
+PRODUCT: MasterSeal 6100 — Two-Component Cementitious Waterproofing Membrane
+MANUFACTURER: Master Builders Solutions
+TDS REFERENCE: MS-6100-EN-Rev03
+CATEGORY: Cementitious Waterproofing
+
+DESCRIPTION
+MasterSeal 6100 is a two-component, polymer-modified cementitious
+waterproofing coating for concrete and masonry substrates. Suitable for
+potable water tanks, basements, retaining walls, and swimming pools.
+
+TECHNICAL PROPERTIES
+- Mix ratio (A:B by weight): 2.5 : 1
+- Pot life at 25 C: 45 minutes
+- Open time after mixing: 30 minutes
+- Application temperature range: +5 C to +35 C
+- Substrate moisture content (max): 5 %
+- Recoating interval (min): 4 hours
+- Recoating interval (max): 24 hours
+- Full cure: 7 days at 25 C and 50 % RH
+- Recommended dry film thickness per coat: 1.0 - 1.2 mm
+- Number of coats required: 2
+- Compressive strength at 28 days: >= 35 MPa
+- Adhesion to concrete at 28 days: >= 1.0 MPa
+- Chloride ion content: <= 0.05 % by mass of cement
+- Water vapour permeability: < 5 g/m2.day
+
+SUBSTRATE PREPARATION
+- Concrete must be clean, sound, and free of laitance, oil, grease,
+  and loose particles.
+- Surface must be damp (saturated surface dry) before application.
+- Repair all honeycombing, cracks, and voids with a suitable repair
+  mortar prior to coating.
+- Roughen smooth surfaces by mechanical means.
+- All form release agents must be completely removed.
+
+MIXING
+- Add the liquid component (A) to a clean mixing vessel.
+- Slowly add the powder component (B) while mixing with a slow-speed
+  drill (max 500 rpm).
+- Mix for 3 minutes, then allow to stand for 5 minutes.
+- Remix briefly before use.
+- Do NOT add water beyond the specified ratio.
+
+APPLICATION
+- Apply the first coat by brush or roller at the specified thickness.
+- Allow to cure for at least 4 hours at 25 C before the second coat.
+- Apply the second coat in the perpendicular direction to the first.
+- Do not apply in direct sunlight, rain, or wind.
+- Do not apply if rain is expected within 8 hours.
+
+CURING
+- Cure the coating for 7 days by water spray or damp cloth.
+- Prevent rapid drying in hot or windy weather.
+- Do not allow traffic for at least 48 hours after final coat.
+
+STORAGE
+- Store in a dry, covered area between +5 C and +30 C.
+- Shelf life: 12 months in unopened containers.
+- Protect from freezing.
+
+SAFETY
+- Wear suitable gloves and eye protection during mixing and application.
+- Avoid contact with skin and eyes.
+- Use only in well-ventilated areas.
+- Refer to Safety Data Sheet for full handling information.
 """
 
 
@@ -223,6 +326,8 @@ async def _ocr_handwriting(file_bytes, mime_type):
     if not text:
         return "", "No readable text found."
     return text, None
+
+
 def _render_footer():
     ui.html(
         '<div class="footer-line">'
@@ -251,8 +356,9 @@ def _render_feedback_bar():
             ).classes("feedback-hint")
 
             with ui.element('div').classes("feedback-row"):
-                msg_in = ui.input(placeholder="Send feedback...").props(
-                    "dense borderless").style("flex:1;").classes(
+                msg_in = ui.textarea(
+                    placeholder="Send feedback..."
+                ).props("dense borderless autogrow").classes(
                     "feedback-input")
 
                 def _send():
@@ -268,9 +374,9 @@ def _render_feedback_bar():
                     ui.notify("Thank you — your feedback was received.",
                                type="positive")
 
-                msg_in.on("keydown.enter", lambda _: _send())
                 ui.button(icon="send", on_click=_send).props(
                     "flat dense").classes("feedback-send")
+
 
 def build_tds_ui():
     ui.add_head_html(STYLE)
@@ -306,6 +412,31 @@ def _render_body(tstate, render):
             render()
         ui.button(icon="refresh", on_click=_refresh).props(
             "flat round dense size=sm").style("color:#808080;")
+
+    ui.html(
+        '<div class="flow-wrap">'
+        '<div class="flow-box">'
+        '<div class="flow-num">1. Upload</div>'
+        '<div class="flow-title">Drop a TDS</div>'
+        '<div class="flow-sub">PDF / DOCX / TXT / Image</div>'
+        '</div>'
+        '<div class="flow-arrow">&rarr;</div>'
+        '<div class="flow-box">'
+        '<div class="flow-num">2. AI Reads</div>'
+        '<div class="flow-title">Extracts parameters</div>'
+        '<div class="flow-sub">Product data &amp; limits</div>'
+        '</div>'
+        '<div class="flow-arrow">&rarr;</div>'
+        '<div class="flow-box">'
+        '<div class="flow-num">3. Download</div>'
+        '<div class="flow-title">MOS + ITP</div>'
+        '<div class="flow-sub">PDF or TXT</div>'
+        '</div>'
+        '</div>'
+        '<div class="flow-time">'
+        'Typical generation time: 45&ndash;90 seconds.'
+        '</div>'
+    )
 
     ui.label(
         "Upload a manufacturer Technical Data Sheet (PDF, DOCX, TXT, "
@@ -396,6 +527,42 @@ def _render_body(tstate, render):
             "flat bordered accept=.pdf,.docx,.txt,.md,.jpg,.jpeg,.png "
             "label='Upload TDS (PDF / DOCX / TXT / Image)'")
         upload_status
+
+        async def _run_example():
+            if tstate["running"]:
+                ui.notify("Already processing…", type="warning")
+                return
+            tstate["result"] = None
+            tstate["error"] = None
+            tstate["filename"] = "EXAMPLE — MasterSeal 6100 TDS"
+            upload_status.set_text(
+                "Loading example TDS. Calling AI to draft MOS + ITP… "
+                "(45–90 seconds)")
+            upload_status.style(
+                "margin-top:6px;display:block;min-height:16px;"
+                "color:#fbbf24;font-size:10px;")
+            tstate["running"] = True
+            try:
+                result = await tds.generate_mos_itp(
+                    _EXAMPLE_TDS_TEXT, call_gemini_json)
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                result = {"error": "AI failed: " + repr(ex)}
+            tstate["running"] = False
+            if result.get("error"):
+                tstate["error"] = result["error"]
+            else:
+                tstate["result"] = result
+            render()
+
+        def _load_example():
+            asyncio.create_task(_run_example())
+
+        ui.button(
+            "Don't have a TDS? Try an example →",
+            on_click=_load_example
+        ).props("flat dense no-caps").classes("example-btn")
 
     if tstate.get("error"):
         with ui.element('div').classes("card").style(
