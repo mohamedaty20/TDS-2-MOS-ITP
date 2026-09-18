@@ -52,9 +52,6 @@ STYLE = """
   .main-content { padding: 14px; padding-bottom: 40px;
                   max-width: 760px; margin: 0 auto; width: 100%;
                   box-sizing: border-box; }
-  .section-head { display: flex; justify-content: space-between;
-                  align-items: center; margin-bottom: 10px;
-                  padding-bottom: 6px; border-bottom: 1px solid #1e1e1e; }
   .h1 { font-size: 16px; font-weight: 700; color: #e8e8e8;
         letter-spacing: -0.02em; }
   .muted { color: #808080; font-size: 11px; }
@@ -72,7 +69,16 @@ STYLE = """
     vertical-align: middle; margin-right: 4px;
   }
 
-  /* ---------- Uploader: centered, plus on top, outline plus ---------- */
+  /* Big centered page title */
+  .page-title-wrap { width: 100%; text-align: center;
+                     padding: 26px 14px 6px; box-sizing: border-box;
+                     position: relative; }
+  .page-title { font-size: 30px; font-weight: 800;
+                color: #e8e8e8; letter-spacing: -0.03em;
+                font-family: 'JetBrains Mono', monospace; }
+  .page-title-refresh { position: absolute; top: 30px; right: 18px; }
+
+  /* Uploader: centered, plus on top, outline plus */
   .q-uploader { background: #161616 !important;
                 border: 1px dashed #262626 !important;
                 border-radius: 4px !important; width: 100% !important;
@@ -110,8 +116,10 @@ STYLE = """
   }
   .q-uploader__title, .q-uploader__subtitle {
     color: #e8e8e8 !important; text-align: center !important; }
-  .q-uploader__title { font-size: 11px !important; }
-  .q-uploader__subtitle { font-size: 9px !important;
+  .q-uploader__title { font-size: 14px !important;
+                       font-weight: 600 !important;
+                       letter-spacing: -0.01em !important; }
+  .q-uploader__subtitle { font-size: 10px !important;
                           color: #808080 !important; }
   .q-uploader .q-btn { color: #808080 !important; }
   .q-uploader__list { background: transparent !important; }
@@ -131,7 +139,7 @@ STYLE = """
                 padding: 6px; margin-top: 6px;
                 background: #161616; }
 
-  /* ---------- Flow diagram — extra small ---------- */
+  /* Flow diagram — extra small */
   .flow-wrap { display: flex; align-items: center;
                justify-content: center; gap: 6px;
                max-width: 460px; margin: 8px auto 0;
@@ -166,7 +174,7 @@ STYLE = """
   .page-shell { display: flex; flex-direction: column;
                 min-height: 100vh; width: 100%; }
   .page-main { flex: 1 1 auto; width: 100%; }
-  .footer-wrap { width: 100%; padding: 40px 14px 120px;
+  .footer-wrap { width: 100%; padding: 40px 14px 40px;
                  box-sizing: border-box; text-align: center; }
   .footer-line { font-size: 10px; color: #4a4a4a;
                  text-align: center; line-height: 1.9;
@@ -179,19 +187,24 @@ STYLE = """
   .footer-copy { color: #3a3a3a; font-size: 9.5px; margin-top: 10px;
                  letter-spacing: 0.04em; }
 
-  /* ---------- Collapsible feedback ---------- */
-  .feedback-trigger { position: fixed; bottom: 14px; right: 16px;
-                      display: flex; align-items: center;
-                      cursor: pointer; z-index: 600;
-                      padding: 4px 8px;
-                      font-family: 'JetBrains Mono', monospace;
-                      user-select: none; }
-  .feedback-trigger:hover .feedback-word { text-decoration: underline; }
-  .feedback-word { color: #5eead4; font-size: 11px; font-weight: 600;
+  /* Inline feedback trigger — centered just above the footer line */
+  .feedback-trigger-inline {
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; padding: 6px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    user-select: none; margin: 0 auto 14px;
+    width: fit-content;
+  }
+  .feedback-trigger-inline:hover .feedback-word {
+    text-decoration: underline;
+  }
+  .feedback-word { color: #5eead4; font-size: 12px; font-weight: 600;
                    letter-spacing: 0.04em; }
-  .feedback-arrow { color: #4a4a4a; font-size: 11px;
+  .feedback-arrow { color: #4a4a4a; font-size: 12px;
                     font-weight: 400; margin-left: 5px;
                     letter-spacing: -1px; }
+
+  /* Expanded feedback panel */
   .feedback-overlay { position: fixed; inset: 0;
                       background: transparent; z-index: 550; }
   .feedback-bar { position: fixed; bottom: 0; left: 0; right: 0;
@@ -382,34 +395,37 @@ async def _ocr_handwriting(file_bytes, mime_type):
     return text, None
 
 
-def _render_footer():
-    ui.html(
-        '<div class="footer-line">'
-        'Made by Mohamed Abd Al Aty'
-        '<span class="sep">·</span>Construction Engineer'
-        '<span class="sep">·</span>AI Product Builder'
-        '<div class="footer-note">'
-        'Built with a highly trained AI module. All outputs should be '
-        'reviewed and verified by a qualified engineer before use in '
-        'decision-making.'
-        '</div>'
-        '<div class="footer-copy">'
-        '© 2026 Mohamed Abd Al Aty. All rights reserved.'
-        '</div>'
-        '</div>'
-    )
+def _render_footer(open_feedback_fn):
+    with ui.element('div').classes("footer-wrap"):
+        # Feedback trigger centered, directly above the made-by line
+        trigger = ui.element('div').classes("feedback-trigger-inline")
+        with trigger:
+            ui.label("Feedback").classes("feedback-word")
+            ui.label("»").classes("feedback-arrow")
+        trigger.on("click", open_feedback_fn)
+
+        ui.html(
+            '<div class="footer-line">'
+            'Made by Mohamed Abd Al Aty'
+            '<span class="sep">·</span>Construction Engineer'
+            '<span class="sep">·</span>AI Product Builder'
+            '<div class="footer-note">'
+            'Built with a highly trained AI module. All outputs should be '
+            'reviewed and verified by a qualified engineer before use in '
+            'decision-making.'
+            '</div>'
+            '<div class="footer-copy">'
+            '© 2026 Mohamed Abd Al Aty. All rights reserved.'
+            '</div>'
+            '</div>'
+        )
 
 
-def _render_feedback_bar():
+def _render_feedback_panel():
     from services import feedback_db
 
     overlay = ui.element('div').classes("feedback-overlay")
     overlay.style("display:none;")
-
-    trigger = ui.element('div').classes("feedback-trigger")
-    with trigger:
-        ui.label("Feedback").classes("feedback-word")
-        ui.label("»").classes("feedback-arrow")
 
     panel = ui.element('div').classes("feedback-bar")
     panel.style("display:none;")
@@ -429,12 +445,10 @@ def _render_feedback_bar():
     def _open(e=None):
         overlay.style("display:block;")
         panel.style("display:block;")
-        trigger.style("display:none;")
 
     def _close(e=None):
         overlay.style("display:none;")
         panel.style("display:none;")
-        trigger.style("display:flex;")
 
     def _send():
         txt = (msg_in.value or "").strip()
@@ -449,9 +463,10 @@ def _render_feedback_bar():
                    type="positive")
         _close()
 
-    trigger.on("click", _open)
     overlay.on("click", _close)
     send_btn.on("click", _send)
+
+    return _open
 
 
 def build_tds_ui():
@@ -459,10 +474,27 @@ def build_tds_ui():
 
     tstate = {"result": None, "running": False, "error": None, "filename": ""}
 
+    # The refresh button needs to reference `render` defined below.
+    refresh_holder = {"fn": None}
+
+    def _do_refresh():
+        tstate["result"] = None
+        tstate["error"] = None
+        if refresh_holder["fn"]:
+            refresh_holder["fn"]()
+
     with ui.element('div').classes("page-shell"):
         with ui.element('div').classes("app-header"):
             ui.label("TDS → MOS & ITP").classes("brand")
 
+        # Big centered page title
+        with ui.element('div').classes("page-title-wrap"):
+            ui.label("TDS → MOS & ITP").classes("page-title")
+            with ui.element('div').classes("page-title-refresh"):
+                ui.button(icon="refresh", on_click=_do_refresh).props(
+                    "flat round dense size=sm").style("color:#808080;")
+
+        # Flow diagram — small, below the title
         with ui.element('div').classes("flow-wrap"):
             with ui.element('div').classes("flow-box"):
                 ui.html('<div class="flow-num">1. Upload</div>'
@@ -489,25 +521,17 @@ def build_tds_ui():
             with content:
                 _render_body(tstate, render)
 
+        refresh_holder["fn"] = render
         render()
 
-        with ui.element('div').classes("footer-wrap"):
-            _render_footer()
+        # Feedback panel (hidden) + open function
+        open_feedback = _render_feedback_panel()
 
-    _render_feedback_bar()
+        # Footer with centered feedback trigger above the made-by line
+        _render_footer(open_feedback)
 
 
 def _render_body(tstate, render):
-    with ui.element('div').classes("section-head"):
-        ui.label("TDS → MOS & ITP").classes("h1")
-
-        def _refresh():
-            tstate["result"] = None
-            tstate["error"] = None
-            render()
-        ui.button(icon="refresh", on_click=_refresh).props(
-            "flat round dense size=sm").style("color:#808080;")
-
     ui.label(
         "Upload a manufacturer Technical Data Sheet (PDF, DOCX, TXT, "
         "or image). The tool extracts critical parameters with AI and "
