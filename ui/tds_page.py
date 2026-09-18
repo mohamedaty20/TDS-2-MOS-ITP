@@ -4,10 +4,11 @@ ui/tds_page.py — Standalone TDS → MOS + ITP page.
 import asyncio
 import datetime
 import html as _html_mod
-from nicegui import ui
+from nicegui import ui, app
 
 from services import defect_service as svc
 from services import tds_service as tds
+from services import tds_documents_db as tddb
 from services.ai_service import call_gemini_json
 
 
@@ -69,7 +70,6 @@ STYLE = """
     vertical-align: middle; margin-right: 4px;
   }
 
-  /* Big centered page title */
   .page-title-wrap { width: 100%; text-align: center;
                      padding: 26px 14px 6px; box-sizing: border-box;
                      position: relative; }
@@ -78,7 +78,6 @@ STYLE = """
                 font-family: 'JetBrains Mono', monospace; }
   .page-title-refresh { position: absolute; top: 30px; right: 18px; }
 
-  /* Uploader: compact horizontal, centered, small plus */
   .q-uploader { background: #161616 !important;
                 border: 1px dashed #262626 !important;
                 border-radius: 4px !important; width: 100% !important;
@@ -140,7 +139,6 @@ STYLE = """
                 padding: 6px; margin-top: 6px;
                 background: #161616; }
 
-  /* Flow diagram — small */
   .flow-wrap { display: flex; align-items: center;
                justify-content: center; gap: 6px;
                max-width: 460px; margin: 4px auto 0;
@@ -188,7 +186,6 @@ STYLE = """
   .footer-copy { color: #3a3a3a; font-size: 9.5px; margin-top: 10px;
                  letter-spacing: 0.04em; }
 
-  /* Inline feedback trigger */
   .feedback-trigger-inline {
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; padding: 6px 10px;
@@ -205,7 +202,6 @@ STYLE = """
                     font-weight: 400; margin-left: 5px;
                     letter-spacing: -1px; }
 
-  /* Expanded feedback panel */
   .feedback-overlay { position: fixed; inset: 0;
                       background: transparent; z-index: 550; }
   .feedback-bar { position: fixed; bottom: 0; left: 0; right: 0;
@@ -247,6 +243,30 @@ STYLE = """
                    min-height: 34px !important;
                    padding: 0 !important; }
   .feedback-send .q-icon { font-size: 16px !important; }
+
+  /* Company header panel */
+  .hdr-toggle {
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none;
+    padding: 8px 10px; margin-bottom: 4px;
+    background: #101010; border: 1px solid #1e1e1e;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: #14b8a6; font-weight: 600;
+    width: fit-content;
+  }
+  .hdr-toggle:hover { background: #161616; }
+  .hdr-arrow { color: #4a4a4a; font-size: 10px; }
+  .hdr-panel { background: #101010; border: 1px solid #1e1e1e;
+               border-radius: 4px; padding: 14px 16px;
+               margin-bottom: 12px; }
+  .hdr-hint { font-size: 10px; color: #5a5a5a; margin-bottom: 10px;
+              display: block; line-height: 1.6;
+              font-family: 'JetBrains Mono', monospace; }
+  .hdr-row { display: grid; grid-template-columns: 1fr 1fr;
+             gap: 8px; margin-bottom: 8px; }
+  .hdr-row.one { grid-template-columns: 1fr; }
+  .hdr-upload { margin-top: 6px; }
 </style>
 """
 
@@ -396,6 +416,172 @@ async def _ocr_handwriting(file_bytes, mime_type):
     return text, None
 
 
+# ---------------------------------------------------------------------
+# BROWSER STORAGE — company header persistence
+# ---------------------------------------------------------------------
+def _load_stored_header():
+    try:
+        stored = app.storage.browser.get("tds_header") or {}
+    except Exception:
+        stored = {}
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    return {
+        "company_name": str(stored.get("company_name") or ""),
+        "project_name": str(stored.get("project_name") or ""),
+        "location": str(stored.get("location") or ""),
+        "prepared_by": str(stored.get("prepared_by") or ""),
+        "date": str(stored.get("date") or today) or today,
+    }
+
+
+def _save_stored_header(hdr):
+    try:
+        app.storage.browser["tds_header"] = {
+            "company_name": hdr.get("company_name") or "",
+            "project_name": hdr.get("project_name") or "",
+            "location": hdr.get("location") or "",
+            "prepared_by": hdr.get("prepared_by") or "",
+            "date": hdr.get("date") or "",
+        }
+    except Exception as e:
+        print("[tds] save header failed: " + repr(e))
+
+
+def _header_has_content(hdr):
+    if not hdr:
+        return False
+    return bool(
+        (hdr.get("company_name") or "").strip()
+        or (hdr.get("project_name") or "").strip()
+        or (hdr.get("location") or "").strip()
+        or (hdr.get("prepared_by") or "").strip()
+        or hdr.get("logo_bytes")
+    )
+
+
+def _header_for_pdf(hdr):
+    if not _header_has_content(hdr):
+        return None
+    return {
+        "company_name": hdr.get("company_name") or "",
+        "project_name": hdr.get("project_name") or "",
+        "location": hdr.get("location") or "",
+        "prepared_by": hdr.get("prepared_by") or "",
+        "date": hdr.get("date") or "",
+        "logo_bytes": hdr.get("logo_bytes"),
+    }
+
+
+# ---------------------------------------------------------------------
+# COMPANY HEADER PANEL
+# ---------------------------------------------------------------------
+def _render_company_header_panel(tstate, render):
+    # One-time init from browser storage
+    if "hdr" not in tstate:
+        loaded = _load_stored_header()
+        tstate["hdr"] = {
+            "company_name": loaded["company_name"],
+            "project_name": loaded["project_name"],
+            "location": loaded["location"],
+            "prepared_by": loaded["prepared_by"],
+            "date": loaded["date"],
+            "logo_bytes": None,
+            "expanded": False,
+        }
+
+    hdr = tstate["hdr"]
+
+    def _toggle():
+        hdr["expanded"] = not hdr.get("expanded", False)
+        render()
+
+    def _on_change(e=None):
+        _save_stored_header(hdr)
+
+    # Toggle bar
+    arrow = "▼" if hdr.get("expanded") else "▶"
+    label = ("Add company header (optional)" if not _header_has_content(hdr)
+             else "Company header (added)")
+    toggle = ui.element('div').classes("hdr-toggle")
+    with toggle:
+        ui.label(arrow).classes("hdr-arrow")
+        ui.label(label)
+    toggle.on("click", _toggle)
+
+    # Body
+    if not hdr.get("expanded"):
+        return
+
+    with ui.element('div').classes("hdr-panel"):
+        ui.label(
+            "Optional. If filled, the header renders at the top of page 1 "
+            "of the PDF. Skipping this keeps the default PDF unchanged."
+        ).classes("hdr-hint")
+
+        # Row 1: company name + project name
+        with ui.element('div').classes("hdr-row"):
+            ui.input("Company name").bind_value(
+                hdr, "company_name").style("width:100%;").on(
+                "update:model-value", _on_change)
+            ui.input("Project name").bind_value(
+                hdr, "project_name").style("width:100%;").on(
+                "update:model-value", _on_change)
+
+        # Row 2: location + prepared by
+        with ui.element('div').classes("hdr-row"):
+            ui.input("Location").bind_value(
+                hdr, "location").style("width:100%;").on(
+                "update:model-value", _on_change)
+            ui.input("Prepared by").bind_value(
+                hdr, "prepared_by").style("width:100%;").on(
+                "update:model-value", _on_change)
+
+        # Row 3: date (single column, narrower)
+        with ui.element('div').classes("hdr-row one"):
+            ui.input("Date").bind_value(
+                hdr, "date").style("width:100%;").on(
+                "update:model-value", _on_change)
+
+        # Logo upload
+        logo_status = ui.label(
+            "Logo attached" if hdr.get("logo_bytes") else "No logo"
+        ).classes("mono-sm").style(
+            "margin-top:8px;display:block;"
+            + ("color:#4ade80;" if hdr.get("logo_bytes") else ""))
+
+        async def _on_logo(e):
+            try:
+                data = e.content.read()
+                if hasattr(data, "__await__"):
+                    data = await data
+            except Exception as ex:
+                ui.notify("Logo read failed: " + str(ex), type="negative")
+                return
+            if not data:
+                ui.notify("Empty file.", type="warning")
+                return
+            hdr["logo_bytes"] = data
+            ui.notify("Logo attached.", type="positive")
+            render()
+
+        with ui.element('div').classes("hdr-upload"):
+            ui.upload(on_upload=_on_logo, auto_upload=True).style(
+                "width:100%;").props(
+                "flat bordered accept=image/* label='Upload logo (PNG / JPG)'")
+            logo_status
+
+        def _clear_logo():
+            hdr["logo_bytes"] = None
+            render()
+
+        if hdr.get("logo_bytes"):
+            ui.button("Clear logo", on_click=_clear_logo).classes(
+                "btn-soft").style("margin-top:6px;font-size:10px;")
+
+
+# ---------------------------------------------------------------------
+# FOOTER + FEEDBACK
+# ---------------------------------------------------------------------
 def _render_footer(open_feedback_fn):
     with ui.element('div').classes("footer-wrap"):
         trigger = ui.element('div').classes("feedback-trigger-inline")
@@ -469,6 +655,9 @@ def _render_feedback_panel():
     return _open
 
 
+# ---------------------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------------------
 def build_tds_ui():
     ui.add_head_html(STYLE)
 
@@ -507,14 +696,12 @@ def build_tds_ui():
 
 
 def _render_body(tstate, render):
-    # Description first
     ui.label(
         "Upload a manufacturer Technical Data Sheet (PDF, DOCX, TXT, "
         "or image). The tool extracts critical parameters with AI and "
         "drafts a Method Statement + an Inspection & Test Plan."
     ).classes("muted").style("margin-bottom:14px;line-height:1.6;")
 
-    # 3-step strip — now below the description
     with ui.element('div').classes("flow-wrap"):
         with ui.element('div').classes("flow-box"):
             ui.html('<div class="flow-num">1. Upload</div>'
@@ -676,6 +863,30 @@ def _render_body(tstate, render):
     itp = result.get("inspection_test_plan") or {}
     crit = result.get("critical_parameters") or []
 
+    # -------- Company header panel (collapsed by default) --------
+    _render_company_header_panel(tstate, render)
+
+    hdr = tstate.get("hdr") or {}
+    hdr_present = _header_has_content(hdr)
+
+    def _record_meta(doc_type):
+        """Save header metadata (not logo bytes) to the tds_documents table."""
+        if not hdr_present:
+            return
+        try:
+            tddb.save_document_meta(
+                company_name=hdr.get("company_name") or "",
+                project_name=hdr.get("project_name") or "",
+                location=hdr.get("location") or "",
+                prepared_by=hdr.get("prepared_by") or "",
+                doc_date=hdr.get("date") or "",
+                product_name=product.get("name") or "",
+                doc_type=doc_type,
+            )
+        except Exception as ex:
+            print("[tds] save meta failed: " + repr(ex))
+
+    # -------- Download buttons --------
     with ui.element('div').style(
         "display:grid;grid-template-columns:1fr 1fr;gap:6px;"
         "margin-bottom:12px;"
@@ -788,37 +999,72 @@ def _render_body(tstate, render):
                 traceback.print_exc()
                 ui.notify("TXT failed: " + str(ex), type="negative")
 
-        def _dl_mos():
+        def _dl_mos_no_header():
             try:
-                pdf = tds.build_mos_pdf(product, mos, crit)
+                pdf = tds.build_mos_pdf(product, mos, crit, header=None)
                 ui.download(pdf, filename="method_statement.pdf")
             except Exception as ex:
                 import traceback
                 traceback.print_exc()
                 ui.notify("PDF failed: " + str(ex), type="negative")
 
-        def _dl_itp():
+        def _dl_itp_no_header():
             try:
-                pdf = tds.build_itp_pdf(product, itp)
+                pdf = tds.build_itp_pdf(product, itp, header=None)
                 ui.download(pdf, filename="inspection_test_plan.pdf")
             except Exception as ex:
                 import traceback
                 traceback.print_exc()
                 ui.notify("PDF failed: " + str(ex), type="negative")
 
+        def _dl_mos_with_header():
+            try:
+                _record_meta("MOS")
+                pdf = tds.build_mos_pdf(product, mos, crit,
+                                          header=_header_for_pdf(hdr))
+                ui.download(pdf, filename="method_statement_header.pdf")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("PDF failed: " + str(ex), type="negative")
+
+        def _dl_itp_with_header():
+            try:
+                _record_meta("ITP")
+                pdf = tds.build_itp_pdf(product, itp,
+                                          header=_header_for_pdf(hdr))
+                ui.download(pdf, filename="inspection_test_plan_header.pdf")
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                ui.notify("PDF failed: " + str(ex), type="negative")
+
+        # Row 1: TXT
         ui.button("Method Statement — TXT", icon="description",
                   on_click=_mos_txt).classes("btn-soft").style(
             "width:100%;font-size:10px;")
         ui.button("ITP — TXT", icon="description",
                   on_click=_itp_txt).classes("btn-soft").style(
             "width:100%;font-size:10px;")
-        ui.button("Method Statement — PDF", icon="picture_as_pdf",
-                  on_click=_dl_mos).classes("btn-primary").style(
+
+        # Row 2: PDF without header (always available)
+        ui.button("MOS PDF — no header", icon="picture_as_pdf",
+                  on_click=_dl_mos_no_header).classes("btn-soft").style(
             "width:100%;font-size:10px;")
-        ui.button("ITP — PDF", icon="picture_as_pdf",
-                  on_click=_dl_itp).classes("btn-primary").style(
+        ui.button("ITP PDF — no header", icon="picture_as_pdf",
+                  on_click=_dl_itp_no_header).classes("btn-soft").style(
             "width:100%;font-size:10px;")
 
+        # Row 3: PDF with header (only if header has content)
+        if hdr_present:
+            ui.button("MOS PDF — with header", icon="picture_as_pdf",
+                      on_click=_dl_mos_with_header).classes(
+                "btn-primary").style("width:100%;font-size:10px;")
+            ui.button("ITP PDF — with header", icon="picture_as_pdf",
+                      on_click=_dl_itp_with_header).classes(
+                "btn-primary").style("width:100%;font-size:10px;")
+
+    # -------- Product card --------
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.label("PRODUCT").classes("label")
         ui.label(str(product.get("name") or "Not specified")).style(
@@ -834,6 +1080,7 @@ def _render_body(tstate, render):
             ui.label(" · ".join(bits)).classes("mono-sm").style(
                 "margin-top:4px;color:#b8b8b8;")
 
+    # -------- MOS preview --------
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.html(
             '<div style="font-size:15px;font-weight:700;'
@@ -864,6 +1111,7 @@ def _render_body(tstate, render):
                     _html_mod.escape(body) + '</pre>'
                 )
 
+    # -------- ITP preview --------
     with ui.element('div').classes("card").style("margin-bottom:12px;"):
         ui.html(
             '<div style="font-size:15px;font-weight:700;'
